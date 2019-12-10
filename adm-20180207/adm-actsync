@@ -1,0 +1,41 @@
+#! /bin/sh
+#
+# adm-actsync	Connect to the master active file server
+#		and synchronize the local active file with it.
+#
+
+NEWS=/news
+
+cd $NEWS
+echo "`date` $0 BEGIN"
+
+server="$1"
+active=""
+hostname=$(hostname)
+dosync=yes
+
+case "$server" in
+	""|-*)
+		echo "Usage: $0 <activeserver> or <activeserver,activeserver..>"
+		;;
+	*)
+		for srv in $(echo "$server" | tr , ' ')
+		do
+			if [ "$active" = "" ]
+			then
+				active="$srv"
+			fi
+			if [ "$hostname" = "$srv" ]
+			then
+				dosync=no
+			fi
+		done
+		if [ "$dosync" = yes ]
+		then
+			dbin/dsyncgroups -h "$active" -a -D
+		fi
+		;;
+esac
+
+echo "`date` $0 END"
+

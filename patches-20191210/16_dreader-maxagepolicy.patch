@@ -1,0 +1,23 @@
+--- diablo-6-CUR-20140422-00/dreaderd/spool.c.ORIG	2014-04-14 00:21:02.000000000 +0200
++++ diablo-6-CUR-20140422-00/dreaderd/spool.c	2015-08-10 19:05:10.000000000 +0200
+@@ -20,6 +20,8 @@
+ void
+ NNSpoolCommand1(Connection *conn)
+ {
++    char smaxage[32];
++
+     ServReq *sreq = conn->co_SReq;
+ 
+     if (DebugOpt)
+@@ -32,7 +34,10 @@
+ 	    MBPrintf(&conn->co_TMBuf, "whereis %s REL\r\n", sreq->sr_MsgId);
+ 	NNGetLocal1(conn) ;
+     } else {
+-	MBPrintf(&conn->co_TMBuf, "article %s\r\n", sreq->sr_MsgId);
++	smaxage[0] = 0;
++	if (sreq->sr_MaxAge)
++	    snprintf(smaxage, sizeof(smaxage), " a%d", sreq->sr_MaxAge);
++	MBPrintf(&conn->co_TMBuf, "article %s%s\r\n", sreq->sr_MsgId, smaxage);
+ 	conn->co_ServerArticleRequestedCount++;
+ 	NNSpoolResponse1(conn);
+     }

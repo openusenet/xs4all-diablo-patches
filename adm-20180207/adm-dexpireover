@@ -1,0 +1,42 @@
+#! /bin/sh
+#
+# adm-dexpireover
+#		Expire dreaderd overview data. Must be run daily.
+#
+
+NEWS=/news
+
+echo "`date` - $0 BEGIN"
+cd $NEWS
+
+CACHE=`dbin/dpath cache`
+GROUP=`dbin/dpath group`
+
+# Clean cache database first.
+if [ -d "$CACHE/" ]
+then
+	cd $CACHE
+	find . -type f -name "????????.????????" -mtime +3 -print |
+			xargs rm 2>/dev/null
+	cd
+fi
+
+# Expire overview information
+#
+# The commented entry does a second pass to delete stale alt groups over
+# 180 days old that do not have any traffic.
+# WARNING: Use the '-O' option on a non-dreaderd server or a dreaderd that
+#       only receives control messages will cause problems. See the
+#       dexpireover man page for more details.
+
+if [ -d "$GROUP/" ]
+then
+	cd $GROUP
+	$NEWS/dbin/plock -t $NEWS/.dexpireoverlock \
+		$NEWS/dbin/dexpireover -a -l70
+	#$NEWS/dbin/plock -t $NEWS/.dexpireoverlock \
+	#	$NEWS/dbin/dexpireover -w 'alt.*' -O180 -y
+fi
+
+echo "`date` - $0 END"
+

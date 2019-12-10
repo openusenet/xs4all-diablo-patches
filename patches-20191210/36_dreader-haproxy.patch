@@ -1,0 +1,228 @@
+diff -ruN diablo-6-CUR-20170901-00.a/dreaderd/defs.h diablo-6-CUR-20170901-00/dreaderd/defs.h
+--- diablo-6-CUR-20170901-00.a/dreaderd/defs.h	2018-08-25 17:11:42.013462666 +0200
++++ diablo-6-CUR-20170901-00/dreaderd/defs.h	2018-08-25 17:07:10.955656503 +0200
+@@ -173,6 +173,7 @@
+     int rd_Feed;
+     int rd_Status;
+     int rd_UseProxied;
++    int rd_HaProxy;
+     int rd_Quiet;
+     int rd_ControlPost;
+     int rd_MaxConnTotal;
+@@ -248,6 +249,7 @@
+     struct sockaddr_storage dr_RSin;	/* remote ip:port		*/
+     char dr_AuthUser[64];		/* authinfo user		*/
+     char dr_AuthPass[64];		/* authinfo pass		*/
++    int dr_Flags;			/* flags to pass res->req->res	*/
+     int dr_ResultFlags;			/* see #defines below		*/
+     double dr_ByteCount;		/* how many bytes sent - stats	*/
+     int dr_GrpCount;			/* number of groups entered	*/
+@@ -321,6 +323,11 @@
+ #define	DF_GROUPLOG	0x00000100	/* log groups accessed by user  */
+ #define	DF_AUTH		0x00000200	/* user valid with AUTHINFO	*/
+ #define	DF_USEPROXIED	0x00000400	/* Use proxy-supplied IP	*/
++#define	DF_HAPROXY	0x00000800	/* Ditto, HAPROXY protocol	*/
++#define	DF_ISPROXIED	0x00001000	/* This is a proxied session	*/
++
++/* Flags to pass from DnsRes -> DnsReq -> DnsRes */
++#define DF_RESREQRES	DF_ISPROXIED
+ 
+ /*
+  * MBuf - structure used to manage read and write buffers
+diff -ruN diablo-6-CUR-20170901-00.a/dreaderd/dns.c diablo-6-CUR-20170901-00/dreaderd/dns.c
+--- diablo-6-CUR-20170901-00.a/dreaderd/dns.c	2018-08-25 17:11:42.021462601 +0200
++++ diablo-6-CUR-20170901-00/dreaderd/dns.c	2018-08-25 17:10:35.609999718 +0200
+@@ -181,6 +181,7 @@
+ 						ipname, sizeof(ipname));
+ 
+ 	    bcopy(&dreq.dr_RSin, &dres.dr_Addr, sizeof(dres.dr_Addr));
++	    dres.dr_Flags = dreq.dr_Flags;
+ 
+ 	    /* Do forward DNS doublecheck */
+ 	    if (hname[0] == 0)
+@@ -2810,6 +2811,13 @@
+ 		        readerdef.rd_UseProxied = 0;
+ 		    continue;
+ 		}
++		if (*val && strcmp(opt, "haproxy") == 0) {
++		    if (*val == 'y' || *val == 'Y' || *val == '1')
++		        readerdef.rd_HaProxy = 1;
++		    else
++		        readerdef.rd_HaProxy = 0;
++		    continue;
++		}
+ 		if (*val && strcmp(opt, "quiet") == 0) {
+ 		    if (*val == 'y' || *val == 'Y' || *val == '1')
+ 			readerdef.rd_Quiet = 1;
+@@ -3465,6 +3473,10 @@
+       dres->dr_Flags |= DF_USEPROXIED;
+     else
+       dres->dr_Flags &= ~DF_USEPROXIED;
++    if (dres->dr_ReaderDef->rd_HaProxy)
++      dres->dr_Flags |= DF_HAPROXY;
++    else
++      dres->dr_Flags &= ~DF_HAPROXY;
+     if (dres->dr_ReaderDef->rd_Quiet)
+ 	dres->dr_Flags |= DF_QUIET;
+     else
+diff -ruN diablo-6-CUR-20170901-00.a/dreaderd/main.c diablo-6-CUR-20170901-00/dreaderd/main.c
+--- diablo-6-CUR-20170901-00.a/dreaderd/main.c	2018-08-25 17:11:42.025462569 +0200
++++ diablo-6-CUR-20170901-00/dreaderd/main.c	2018-08-25 17:09:29.798532211 +0200
+@@ -1443,6 +1443,7 @@
+ 	bcopy(&lsin, &dreq.dr_LSin, sizeof(dreq.dr_LSin));
+ 	if (dres != NULL) {
+ 	    dreq.dr_ResultFlags = dres->dr_ResultFlags;
++	    dreq.dr_Flags = dres->dr_Flags & DF_RESREQRES;
+ 	    strcpy(dreq.dr_AuthUser, dres->dr_AuthUser);
+ 	    strcpy(dreq.dr_AuthPass, dres->dr_AuthPass);
+ 	    dreq.dr_ByteCount = dres->dr_ByteCount;
+@@ -1872,7 +1872,7 @@
+ 				UserBan.BanLinkSize);
+ #endif
+ 	}
+-	if (error1 == NULL) {
++	if (error1 == NULL && !(dres.dr_Flags & (DF_USEPROXIED|DF_HAPROXY))) {
+ 	    dr = zalloc(&DnsResPool, sizeof(DnsRes));
+ 	    *dr = dres;
+ 	    dr->dr_HNext = DnsResHash[hi];
+@@ -1967,14 +1968,15 @@
+ 
+     if ((dres.dr_Flags & DF_QUIET) == 0) {
+ 	logit(LOG_INFO,
+-	    "connect to %s from %s%s%s%s%s (%s)", 
++	    "connect to %s from %s%s%s%s%s (%s)%s", 
+ 	    dres.dr_VServerDef->vs_Name,
+ 	    (dres.dr_AuthUser[0] ? dres.dr_AuthUser : ""),
+ 	    (dres.dr_AuthUser[0] ? "/" : ""),
+ 	    (dres.dr_IdentUser[0] ? dres.dr_IdentUser : ""),
+ 	    (dres.dr_IdentUser[0] ? "@" : ""),
+ 	    dres.dr_Host,
+-	    NetAddrToSt(0, (struct sockaddr *)&desc->d_SaveRSin, 1, 1, 1)
++	    NetAddrToSt(0, (struct sockaddr *)&desc->d_SaveRSin, 1, 1, 1),
++	    (dres.dr_Flags & DF_ISPROXIED) > 0 ? " proxied=1" : ""
+ 	);
+     }
+ }
+@@ -2036,9 +2036,9 @@
+ 		    logit(
+ 			LOG_INFO,
+ #ifdef	DREADER_CLIENT_TIMING
+-			"closed from %s%s%s%s%s (%s) groups=%u arts=%u bytes=%.0f posts=%d postbytes=%d postfail=%d vserv=%s secs=%d utime=%.3f stime=%.3f",
++			"closed from %s%s%s%s%s (%s) groups=%u arts=%u bytes=%.0f posts=%d postbytes=%d postfail=%d vserv=%s secs=%d utime=%.3f stime=%.3f%s",
+ #else
+-			"closed from %s%s%s%s%s (%s) groups=%u arts=%u bytes=%.0f posts=%d postbytes=%d postfail=%d vserv=%s secs=%d",
++			"closed from %s%s%s%s%s (%s) groups=%u arts=%u bytes=%.0f posts=%d postbytes=%d postfail=%d vserv=%s secs=%d%s",
+ #endif
+ 			(dr->dr_AuthUser[0] ? dr->dr_AuthUser : ""),
+ 			(dr->dr_AuthUser[0] ? "/" : ""),
+@@ -2056,10 +2056,11 @@
+ #ifdef	DREADER_CLIENT_TIMING
+ 			time(NULL) - dres->dr_TimeStart,
+ 			desc->d_stime/ticksPerSecond,
+-			desc->d_utime/ticksPerSecond
++			desc->d_utime/ticksPerSecond,
+ #else
+-			time(NULL) - dres->dr_TimeStart
++			time(NULL) - dres->dr_TimeStart,
+ #endif
++			(dres->dr_Flags & DF_ISPROXIED) > 0 ? " proxied=1" : ""
+ 		    );
+ 		}
+ 		if (dr->dr_Flags & DF_FEEDONLY) {
+diff -ruN diablo-6-CUR-20170901-00.a/dreaderd/reader.c diablo-6-CUR-20170901-00/dreaderd/reader.c
+--- diablo-6-CUR-20170901-00.a/dreaderd/reader.c	2018-08-25 17:11:42.029462536 +0200
++++ diablo-6-CUR-20170901-00/dreaderd/reader.c	2018-08-25 16:15:44.080615733 +0200
+@@ -499,10 +499,14 @@
+ 	    RTStatusBase(conn->co_Desc->d_Slot, "ACTV %-10s %-30s", vsbuf, hsbuf);
+ 
+ 	    StatusUpdate(conn, "(startup)");
+-	    if (conn->co_Auth.dr_ResultFlags & DR_REQUIRE_DNS)
++	    if (conn->co_Auth.dr_ResultFlags & DR_REQUIRE_DNS) {
+ 		NNAuthDone(conn);
+-	    else
++	    } else {
+ 		NNWriteHello(conn);
++		if (conn->co_Auth.dr_ResultFlags & DR_REQUIRE_DNS) {
++	          FD_SET(ndesc->d_Fd, &WFds);
++                }
++	    }
+ 	} else {
+ 	    if (DebugOpt)
+ 		printf("recvmsg(): EOF1\n");
+@@ -784,6 +788,11 @@
+ 
+     ClientSetTCPOpts(conn);
+ 
++    if (conn->co_Auth.dr_Flags & DF_HAPROXY) {
++      NNCommand(conn);
++      return;
++    }
++
+     if (*conn->co_Auth.dr_VServerDef->vs_Welcome)
+ 	MBLogPrintf(conn,
+ 		&conn->co_TMBuf, 
+@@ -1162,6 +1171,56 @@
+         LogCmd(conn, '<', "authinfo pass **unlogged**");
+     }
+ 
++#ifdef INET6
++    /*
++     *  HAProxy PROXY protocol.
++     *  Syntax: PROXY TCP[46] srcaddr dstaddr srcport dstport
++     */
++    if (conn->co_Auth.dr_Flags & DF_HAPROXY) {
++      struct addrinfo hints, *ai;
++      char *cmd;
++      char *srcaddr = NULL, *srcport = NULL;
++      char *dstaddr = NULL, *dstport = NULL;
++      char *proto = NULL;
++
++      cmd = parseword(&ptr, " ");
++      proto = parseword(&ptr, " ");
++      srcaddr = parseword(&ptr, " ");
++      dstaddr = parseword(&ptr, " ");
++      srcport = parseword(&ptr, " ");
++      dstport = parseword(&ptr, " ");
++      if (!proto || (strcmp(proto, "TCP4") != 0 &&
++                     strcmp(proto, "TCP6") != 0)) {
++        proto = NULL;
++      }
++
++      if (strcmp(cmd, "PROXY") == 0 && proto &&
++          srcaddr && srcport && dstaddr && dstport) {
++        memset(&hints, 0, sizeof(hints));
++	hints.ai_family = AF_UNSPEC;
++	hints.ai_socktype = SOCK_STREAM;
++	hints.ai_flags = AI_NUMERICHOST|AI_NUMERICSERV;
++	if (getaddrinfo(srcaddr, srcport, &hints, &ai) == 0) {
++          memcpy(&conn->co_Auth.dr_Addr, ai->ai_addr, ai->ai_addrlen);
++          conn->co_Auth.dr_Flags &= ~DF_HAPROXY;
++          conn->co_Auth.dr_Flags |= DF_ISPROXIED;
++          conn->co_Auth.dr_ResultFlags = DR_REQUIRE_DNS;
++	  freeaddrinfo(ai);
++	  return;
++	}
++      }
++
++      MBLogPrintf(conn,
++          &conn->co_TMBuf,
++          "400 %s: failed to read haproxy PROXY v1 header.\r\n",
++          conn->co_Auth.dr_VServerDef->vs_HostName
++      );
++      NNTerminate(conn);
++
++      return;
++    }
++#endif
++
+     if (conn->co_Auth.dr_Flags & DF_USEPROXIED) {
+       struct sockaddr_in sin;
+       char *pt = NULL;
+@@ -1185,6 +1244,7 @@
+       bcopy(&sin, &conn->co_Auth.dr_Addr, sizeof(conn->co_Auth.dr_Addr));
+ 
+       conn->co_Auth.dr_Flags &= ~DF_USEPROXIED;
++      conn->co_Auth.dr_Flags |= DF_ISPROXIED;
+       conn->co_Auth.dr_ResultFlags = DR_REQUIRE_DNS;
+       return;
+     }

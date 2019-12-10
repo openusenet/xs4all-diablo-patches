@@ -1,0 +1,16 @@
+--- Orig/diablo-6-CUR-20170901-00/dreaderd/dns.c	2014-04-22 00:24:51.000000000 +0200
++++ diablo-6-CUR-20170901-00/dreaderd/dns.c	2018-08-28 15:21:23.810253522 +0200
+@@ -2093,7 +2084,12 @@
+      * we would like to log the correct info in log lines
+      */
+     if (MatchedAuthenticated <= 0) {
+-	dres->dr_AuthUser[0] = 0;
++	if (dres->dr_ReaderDef->rd_IgnoreAuthInfo && *dreq->dr_AuthUser && *dreq->dr_AuthPass) {
++	    snprintf(dres->dr_AuthUser, sizeof(dres->dr_AuthUser),
++			    "!%s", dreq->dr_AuthUser);
++	} else {
++	    dres->dr_AuthUser[0] = 0;
++	}
+ 	dres->dr_Flags &= ~DF_AUTH;
+     } else {
+ 	dres->dr_Flags |= DF_AUTH;

@@ -1,0 +1,45 @@
+#! /bin/sh
+#
+# rot		Logrotate script.
+#		Used by other scripts to rotate log file(s).
+#
+# Usage:	adm/rot number-of-cycles logfile [logfile..]
+#
+
+if ! [ "$1" -gt 0 ] 2>/dev/null
+then
+	echo "Usage: rot number-of-cycles logfile [logfile..]" >&2
+	exit 1
+fi
+
+NUM=$(($1 - 1))
+shift
+for FN in "$@"
+do
+	if ! [ -s "$FN" ]
+	then
+		continue
+	fi
+
+	C=$NUM
+	while [ $C -gt 0 ]
+	do
+		PREV=$(($C - 1))
+		if [ -f "$FN".$PREV ] && ! [ -f "$FN".$PREV.gz ]
+		then
+			gzip -f "$FN".$PREV
+		fi
+    		if [ -f "$FN".$PREV.gz ]
+		then
+    			mv -f "$FN".$PREV.gz "$FN".$C.gz
+		fi
+		C=$PREV
+	done
+
+	if [ -f "$FN" ]
+	then
+    		mv -f "$FN" "$FN".0
+		touch "$FN"
+	fi
+done
+

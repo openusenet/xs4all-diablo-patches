@@ -1,0 +1,48 @@
+diff -rN -U2 x/diablo-5-CUR-20090530-00.patched/dreaderd/main.c diablo-5-CUR-20090530-00/dreaderd/main.c
+--- x/diablo-5-CUR-20090530-00.patched/dreaderd/main.c	2011-07-11 14:54:07.000000000 +0200
++++ diablo-5-CUR-20090530-00/dreaderd/main.c	2011-07-12 00:13:33.000000000 +0200
+@@ -1777,6 +1781,7 @@
+ 	if (dres.dr_ReaderDef->rd_MaxConnTotal &&
+ 		NumActive > dres.dr_ReaderDef->rd_MaxConnTotal) {
+-	    snprintf(errbuf, sizeof(errbuf), "400 %s: Server connection limit reached%s%s\r\n",
++	    snprintf(errbuf, sizeof(errbuf), "400 %s: Server overload - too many connections (max %d)%s%s\r\n",
+ 				dres.dr_VServerDef->vs_HostName,
++				dres.dr_ReaderDef->rd_MaxConnTotal,
+ 				*dres.dr_VServerDef->vs_NewsAdm ? " - " : "",
+ 				dres.dr_VServerDef->vs_NewsAdm);
+@@ -1796,6 +1801,7 @@
+ 	if (dres.dr_ReaderDef->rd_MaxConnPerVs &&
+ 		vcount > dres.dr_ReaderDef->rd_MaxConnPerVs) {
+-	    snprintf(errbuf, sizeof(errbuf), "400 %s: VServer connection limit reached%s%s\r\n",
++	    snprintf(errbuf, sizeof(errbuf), "400 %s: Vserver overload - too many connections (max %d)%s%s\r\n",
+ 				dres.dr_VServerDef->vs_HostName,
++				dres.dr_ReaderDef->rd_MaxConnPerVs,
+ 				*dres.dr_VServerDef->vs_NewsAdm ? " - " : "",
+ 				dres.dr_VServerDef->vs_NewsAdm);
+@@ -1806,6 +1812,7 @@
+ 	if (dres.dr_ReaderDef->rd_MaxConnPerGroup &&
+ 		gcount > dres.dr_ReaderDef->rd_MaxConnPerGroup) {
+-	    snprintf(errbuf, sizeof(errbuf), "400 %s: You have reached the connection limit for your access classification%s%s\r\n",
++	    snprintf(errbuf, sizeof(errbuf), "400 %s: Too many connections in your group (max %d)%s%s\r\n",
+ 				dres.dr_VServerDef->vs_HostName,
++				dres.dr_ReaderDef->rd_MaxConnPerGroup,
+ 				*dres.dr_VServerDef->vs_NewsAdm ? " - " : "",
+ 				dres.dr_VServerDef->vs_NewsAdm);
+@@ -1825,6 +1832,7 @@
+ 	if (dres.dr_ReaderDef->rd_MaxConnPerHost &&
+ 		hcount > dres.dr_ReaderDef->rd_MaxConnPerHost) {
+-	    snprintf(errbuf, sizeof(errbuf), "400 %s: Your host connection limit reached%s%s\r\n",
++	    snprintf(errbuf, sizeof(errbuf), "400 %s: Too many connections from your host (max %d)%s%s\r\n",
+ 				dres.dr_VServerDef->vs_HostName,
++				dres.dr_ReaderDef->rd_MaxConnPerHost,
+ 				*dres.dr_VServerDef->vs_NewsAdm ? " - " : "",
+ 				dres.dr_VServerDef->vs_NewsAdm);
+@@ -1844,6 +1852,7 @@
+ 		(ucount > dres.dr_ReaderDef->rd_MaxConnPerUser ||
+ 		 icount > dres.dr_ReaderDef->rd_MaxConnPerUser)) {
+-	    snprintf(errbuf, sizeof(errbuf), "400 %s: Your per-user connection limit reached%s%s\r\n",
++	    snprintf(errbuf, sizeof(errbuf), "400 %s: Too many connections from your username (max %d)%s%s\r\n",
+ 				dres.dr_VServerDef->vs_HostName,
++				dres.dr_ReaderDef->rd_MaxConnPerUser,
+ 				*dres.dr_VServerDef->vs_NewsAdm ? " - " : "",
+ 				dres.dr_VServerDef->vs_NewsAdm);

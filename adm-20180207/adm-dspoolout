@@ -1,0 +1,21 @@
+#! /bin/sh
+#
+# adm-dspoolout	Start dspoolout if there are files in /news/dqeue
+#
+#		If diablo is up, runs every 5 minutes from cron-5mins.
+#
+
+NEWS=/news
+cd $NEWS
+
+DQUEUE=`dbin/dpath dqueue`
+
+FIRST=`find $DQUEUE -type f ! -name '.*' ! -empty 2>/dev/null | head -1`
+if ! [ -z "$FIRST" ]
+then
+	echo "`date` $0 BEGIN"
+	STARTED=1
+	dbin/dspoolout -m 6
+fi
+
+[ -n "$STARTED" ] && echo "`date` $0 END"

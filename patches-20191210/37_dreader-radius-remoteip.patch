@@ -1,0 +1,47 @@
+Binary files diablo-6-CUR-20170901-00.a/dreaderd/.main.c.swp and diablo-6-CUR-20170901-00/dreaderd/.main.c.swp differ
+diff -ruN diablo-6-CUR-20170901-00.a/dreaderd/dns.c diablo-6-CUR-20170901-00/dreaderd/dns.c
+--- diablo-6-CUR-20170901-00.a/dreaderd/dns.c	2018-08-25 13:46:59.799234212 +0200
++++ diablo-6-CUR-20170901-00/dreaderd/dns.c	2018-08-25 16:04:48.125850532 +0200
+@@ -57,7 +57,7 @@
+  */
+ char *fileAuthenticate(char *user, char *pass, char *conf);
+ #ifdef RADIUS_ENABLED
+-char *radiusAuthenticate(char *user, char *pass, char *conf);
++char *radiusAuthenticate(char *user, char *pass, const char *ipname, int is_proxied, char *conf);
+ #endif
+ #ifdef CDB_ENABLED
+ extern int cdb_seek(int, char*, unsigned int, unsigned int*);
+@@ -272,7 +272,7 @@
+  *		 "100 Sucess"	success
+  */
+ char *
+-radiusAuthenticate(char *user, char *pass, char *conf)
++radiusAuthenticate(char *user, char *pass, const char *ipname, int is_proxied, char *conf)
+ {
+     static char result[DEFNAMELEN + 16];
+     char *r = NULL, *readerdef = NULL;
+@@ -305,6 +305,16 @@
+ 	rad_close(h);
+ 	return(NULL);
+     }
++    if (ipname[0] && rad_put_string(h, RAD_CALLING_STATION_ID, ipname) < 0) {
++	logit(LOG_ERR, "rad_put_string(RAD_CALLING_STATION_ID) failed: %s", rad_strerror(h));
++	rad_close(h);
++	return(NULL);
++    }
++    if (is_proxied && rad_put_string(h, RAD_CONNECT_INFO, "via_proxy=1") < 0) {
++	logit(LOG_ERR, "rad_put_string(RAD_CONNECT_INFO) failed: %s", rad_strerror(h));
++	rad_close(h);
++	return(NULL);
++    }
+     if (((rval = rad_send_request(h))) < 0) {
+ 	logit(LOG_ERR, "rad_send_request failed: %s", rad_strerror(h));
+ 	rad_close(h);
+@@ -1750,6 +1760,7 @@
+ 				*dreq->dr_AuthPass) {
+ 		stprintf("dns auth radius %s@%s", user, ipname);
+ 		AuthReader = radiusAuthenticate(user, dreq->dr_AuthPass,
++			ipname, (dres->dr_Flags & DF_ISPROXIED) > 0,
+ 			dres->dr_AuthDef->au_Radius);
+ 		stprintf("dns auth search %s", ipname);
+ 		if (AuthReader != NULL && *AuthReader == '1') {

@@ -1,0 +1,11 @@
+diff -ruN a/diablo-6-CUR-20140422-00/dreaderd/defs.h diablo-6-CUR-20140422-00/dreaderd/defs.h
+--- a/diablo-6-CUR-20140422-00/dreaderd/defs.h	2017-01-13 13:52:36.608902297 +0100
++++ diablo-6-CUR-20140422-00/dreaderd/defs.h	2016-07-24 16:55:41.986732659 +0200
+@@ -3,6 +3,7 @@
+ #include <lib/defs.h>
+ #include <sys/uio.h>
+ #ifdef	USE_PRCTL
++#include <sys/resource.h>
+ #include <sys/prctl.h>
+ #endif
+ 

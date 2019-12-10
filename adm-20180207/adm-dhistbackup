@@ -1,0 +1,26 @@
+#! /bin/sh
+#
+# adm-dhistbackup
+#
+#		If the history file is in RAMDISK we need to take
+#		a snapshot of it regularly to be able to
+#		recover reasonably after a crash.
+#
+
+NEWS=/news
+cd $NEWS
+
+DCONF=$NEWS/diablo.config
+
+echo "`date` - $0 BEGIN"
+
+# Do we have dumphist configured ?
+if grep ^path_dumphist $DCONF >/dev/null 2>&1
+then
+	dbin/dicmd dumphist
+else
+	echo "$0: path_dumphist not configured in diablo.config"
+fi
+
+echo "`date` - $0 END"
+

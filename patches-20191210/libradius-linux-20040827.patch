@@ -1,0 +1,48 @@
+diff -ruN libradius-linux.orig/Makefile libradius-linux/Makefile
+--- libradius-linux.orig/Makefile	2004-08-27 09:20:33.000000000 +0200
++++ libradius-linux/Makefile	2008-04-05 00:50:06.000000000 +0200
+@@ -29,10 +29,10 @@
+ RM=		rm -f
+ LN=		ln
+ CC=		cc
+-CFLAGS= -O2
++CFLAGS=		-O2 -fPIC
+ 
+-# linux -L$(PREFIX)/lib -lmd
+-LIBMD= -L$(PREFIX)/lib -lmd
++# linux -L$(PREFIX)/lib -lcrypto
++LIBMD= -L$(PREFIX)/lib -lcrypto
+ 
+ # netbsd - it's in libc
+ #LIBMD= -L/usr/lib -lc
+diff -ruN libradius-linux.orig/radlib.c libradius-linux/radlib.c
+--- libradius-linux.orig/radlib.c	2004-08-27 08:56:52.000000000 +0200
++++ libradius-linux/radlib.c	2005-05-20 02:17:18.000000000 +0200
+@@ -33,7 +33,6 @@
+ #include <arpa/inet.h>
+ 
+ #include <errno.h>
+-#include "md5.h"
+ #include <netdb.h>
+ #include <stdarg.h>
+ #include <stddef.h>
+@@ -42,10 +41,16 @@
+ #include <string.h>
+ #include <unistd.h>
+ 
+-#include "radlib_private.h"
+-#if defined(__linux__)
+-#define MSG_WAITALL     0
++#ifndef __linux__ /* really, openssl */
++#  include "md5.h"
++#else
++#  include <openssl/md5.h>
++#  define MD5Init MD5_Init
++#  define MD5Update MD5_Update
++#  define MD5Final MD5_Final
+ #endif
++
++#include "radlib_private.h"
+ #if !defined(__printflike)
+ #define __printflike(fmtarg, firstvararg)                               \
+         __attribute__((__format__ (__printf__, fmtarg, firstvararg)))

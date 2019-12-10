@@ -1,0 +1,130 @@
+diff -ruN diablo-6-CUR-20140422-00-work/lib/buffer.c diablo-6-CUR-20140422-00-work3/lib/buffer.c
+--- diablo-6-CUR-20140422-00-work/lib/buffer.c	2009-02-15 06:42:12.000000000 +0100
++++ diablo-6-CUR-20140422-00-work3/lib/buffer.c	2015-07-06 18:03:32.000000000 +0200
+@@ -33,7 +33,7 @@
+ Prototype int bunget(Buffer *b, int n);
+ Prototype int bextfree(Buffer *b);
+ #ifdef USE_ZLIB
+-Prototype void bsetcompress(Buffer *b, gzFile *cfile);
++Prototype void bsetcompress(Buffer *b, gzFile cfile);
+ Prototype int bzwrote(Buffer *b);
+ #endif
+ 
+@@ -75,7 +75,7 @@
+ #ifdef USE_ZLIB
+ 
+ void
+-bsetcompress(Buffer *b, gzFile *cfile)
++bsetcompress(Buffer *b, gzFile cfile)
+ {
+     b->bu_gzFile = cfile;
+ }
+diff -ruN diablo-6-CUR-20140422-00-work/lib/config.h diablo-6-CUR-20140422-00-work3/lib/config.h
+--- diablo-6-CUR-20140422-00-work/lib/config.h	2008-08-05 02:19:59.000000000 +0200
++++ diablo-6-CUR-20140422-00-work3/lib/config.h	2015-07-06 18:03:41.000000000 +0200
+@@ -537,5 +537,5 @@
+ #endif
+ 
+ #ifndef USE_ZLIB
+-#define	gzFile	int
++#define	gzFile	void *
+ #endif
+diff -ruN diablo-6-CUR-20140422-00-work/lib/defs.h diablo-6-CUR-20140422-00-work3/lib/defs.h
+--- diablo-6-CUR-20140422-00-work/lib/defs.h	2014-04-14 00:37:17.000000000 +0200
++++ diablo-6-CUR-20140422-00-work3/lib/defs.h	2015-07-06 18:04:12.000000000 +0200
+@@ -776,7 +776,7 @@
+     int			bu_DataMax;	/* extended maximum	*/
+     int			bu_Fd;
+ #ifdef USE_ZLIB
+-    gzFile		*bu_gzFile;
++    gzFile		bu_gzFile;
+     int			bu_gzWrote;
+     CompressBuffer	*bu_CBuf;
+ #else
+diff -ruN diablo-6-CUR-20140422-00-work/util/dcancel.c diablo-6-CUR-20140422-00-work3/util/dcancel.c
+--- diablo-6-CUR-20140422-00-work/util/dcancel.c	2014-04-14 00:21:02.000000000 +0200
++++ diablo-6-CUR-20140422-00-work3/util/dcancel.c	2015-07-06 18:04:57.000000000 +0200
+@@ -338,7 +338,7 @@
+ 	static char *base = NULL;
+ 	static off_t baseLen = 0;
+ 
+-	gzFile *gzf;
++	gzFile gzf;
+ 	SpoolArtHdr tah = { 0 };
+ 	char *p;
+ 
+diff -ruN diablo-6-CUR-20140422-00-work/util/diablo.c diablo-6-CUR-20140422-00-work3/util/diablo.c
+--- diablo-6-CUR-20140422-00-work/util/diablo.c	2015-06-16 13:42:14.000000000 +0200
++++ diablo-6-CUR-20140422-00-work3/util/diablo.c	2015-07-06 18:05:17.000000000 +0200
+@@ -82,7 +82,7 @@
+ int SendArticle(const char *data, int fsize, FILE *fo, int doHead, int doBody);
+ void ArticleFileInit(void);
+ #ifdef USE_ZLIB
+-int ArticleFile(History *h, off_t *pbpos, int clvl, gzFile **cfile);
++int ArticleFile(History *h, off_t *pbpos, int clvl, gzFile *cfile);
+ #else
+ int ArticleFile(History *h, off_t *pbpos, int clvl, char **cfile);
+ #endif
+@@ -3380,7 +3380,7 @@
+ 	    h.gmt = SpoolDirTime();
+ 	    if (spool <= 100) {
+ #ifdef USE_ZLIB
+-		gzFile *cfile = NULL;
++		gzFile cfile = NULL;
+ #else
+ 		char *cfile = NULL;
+ #endif
+@@ -4477,7 +4477,7 @@
+ 
+ int
+ #ifdef USE_ZLIB
+-ArticleFile(History *h, off_t *pbpos, int clvl, gzFile **cfile)
++ArticleFile(History *h, off_t *pbpos, int clvl, gzFile *cfile)
+ #else
+ ArticleFile(History *h, off_t *pbpos, int clvl, char **cfile)
+ #endif
+@@ -4732,7 +4732,7 @@
+ 
+     if (*compressedFormat) {
+ #ifdef USE_ZLIB
+-	gzFile *gzf;
++	gzFile gzf;
+ 	char *p;
+ 
+ 	if ((uint8)tah.Magic1 != STORE_MAGIC1 &&
+diff -ruN diablo-6-CUR-20140422-00-work/util/diloadfromspool.c diablo-6-CUR-20140422-00-work3/util/diloadfromspool.c
+--- diablo-6-CUR-20140422-00-work/util/diloadfromspool.c	2014-04-14 00:21:02.000000000 +0200
++++ diablo-6-CUR-20140422-00-work3/util/diloadfromspool.c	2015-07-06 18:05:22.000000000 +0200
+@@ -485,7 +485,7 @@
+ 	arthdrlen = ah.ArtHdrLen;
+ 	if (ah.StoreType & STORETYPE_GZIP) {
+ #ifdef USE_ZLIB
+-	    gzFile *gzf;
++	    gzFile gzf;
+ 	    long len = ah.ArtLen;
+ 
+ 	    artbase = (char *)malloc(ah.ArtLen + 2);
+diff -ruN diablo-6-CUR-20140422-00-work/util/dnewslink.c diablo-6-CUR-20140422-00-work3/util/dnewslink.c
+--- diablo-6-CUR-20140422-00-work/util/dnewslink.c	2014-04-14 00:21:02.000000000 +0200
++++ diablo-6-CUR-20140422-00-work3/util/dnewslink.c	2015-07-06 18:05:27.000000000 +0200
+@@ -3327,7 +3327,7 @@
+ 	if (cSize > 0) {
+ #ifdef USE_ZLIB
+ 	    char *p;
+-	    gzFile *gzf;
++	    gzFile gzf;
+ 	    SpoolArtHdr tah = { 0 };
+ 
+ 	    lseek(mc->mc_Fd, off, 0);
+diff -ruN diablo-6-CUR-20140422-00-work/util/dreadart.c diablo-6-CUR-20140422-00-work3/util/dreadart.c
+--- diablo-6-CUR-20140422-00-work/util/dreadart.c	2014-04-14 00:21:02.000000000 +0200
++++ diablo-6-CUR-20140422-00-work3/util/dreadart.c	2015-07-06 18:05:33.000000000 +0200
+@@ -220,7 +220,7 @@
+ {
+     if (SpoolCompressed(H_SPOOL(h->exp))) {
+ #ifdef USE_ZLIB
+-	gzFile *gzf;
++	gzFile gzf;
+ 	SpoolArtHdr tah = { 0 };
+ 	char *p;
+ 

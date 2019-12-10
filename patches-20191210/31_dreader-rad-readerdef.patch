@@ -1,0 +1,46 @@
+diff -ruN diablo-5.1-REL.orig/dreaderd/dns.c diablo-5.1-REL/dreaderd/dns.c
+--- diablo-5.1-REL.orig/dreaderd/dns.c	2008-02-26 13:50:55.000000000 +0100
++++ diablo-5.1-REL/dreaderd/dns.c	2008-02-26 13:51:25.000000000 +0100
+@@ -275,9 +275,11 @@
+ radiusAuthenticate(char *user, char *pass, char *conf)
+ {
+     static char result[DEFNAMELEN + 16];
+-    char *r = NULL;
++    char *r = NULL, *readerdef = NULL;
+     struct rad_handle *h;
+-    int rval;
++    int rval, attrtype;
++    const void *attrval;
++    size_t attrlen;
+ 
+     if (! ((h = rad_open()))) {
+ 	logit(LOG_ERR, "unable to rad_auth_open");
+@@ -308,13 +310,23 @@
+ 	rad_close(h);
+ 	return(NULL);
+     }
+-    rad_close(h);
+-
+     if (rval == RAD_ACCESS_ACCEPT) {
+-	strcpy(result, "100 Success");
+-	r = result;
++        while ((attrtype = rad_get_attr(h, &attrval, &attrlen)) > 0) {
++           if (attrtype == RAD_FILTER_ID) {
++               readerdef = rad_cvt_string(attrval, attrlen);
++           }
++        }
++        if (readerdef) {
++           snprintf(result, sizeof(result), "110 %s", readerdef);
++           free(readerdef);
++	} else {
++    	    strcpy(result, "100 Success");
++       }
++       r = result;
+     } else
+-	r = NULL;
++       r = NULL;
++
++    rad_close(h);
+     return(r);
+ }
+ #endif

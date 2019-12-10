@@ -1,0 +1,183 @@
+#! /bin/sh
+#
+# dreaderd	Debian init.d script for the DIABLO dreaderd.
+#
+# Author:	Miquel van Smoorenburg <mikevs@xs4all.net>
+#
+
+### BEGIN INIT INFO
+# Provides:        dreaderd
+# Required-Start:  $network $remote_fs $syslog
+# Required-Stop:   $network $remote_fs $syslog
+# Default-Start:   2 3 4 5
+# Default-Stop:    0 1 6
+# Short-Description: Start dreader server
+### END INIT INFO
+
+if [ ! -f /etc/default/dreaderd ]
+then
+	echo "dreaderd: /etc/default/dreaderd missing. Stop." >&2
+	exit 1
+fi
+. /etc/default/dreaderd
+
+CHECKMOUNT="/news /news/spool/group"
+
+DRINCOMING=/var/log/news/drincoming.log
+DRINCOMING_MAXAGE=1440
+
+NEWS=/news
+DBIN=$NEWS/dbin
+
+DREADERD=$DBIN/dreaderd
+NAME=dreaderd
+DESC="Diablo reader"
+PIDFILE=$NEWS/log/$NAME.pid
+
+SCRIPTNAME=/etc/init.d/dreaderd
+
+if [ ! -x "$DREADERD" ]
+then
+	echo "$0: can't start, binaries not found." >&2
+	exit 0
+fi
+
+if [ ! -f "$NEWS/db/dactive.kp" ]
+then
+	echo "$0: can't start, $NEWS/db/dactive.kp not found." >&2
+	exit 0
+fi
+
+if [ -n "$DELAYEDCLOSE" ]
+then
+	DLC_ARG="-c $DELAYEDCLOSE"
+fi
+if [ -n "$XREFHOST" ]
+then
+	XREF_ARG="-x $XREFHOST"
+fi
+if [ -n "$PATHHOST" ]
+then
+	PATH_ARG="-p $PATHHOST"
+else
+	PATH_ARG="-p $(hostname)"
+fi
+if [ -n "$FASTCOPYOPT" ]
+then
+	FCO_ARG="-f$FASTCOPYOPT"
+fi
+
+cd $NEWS
+HOME=$NEWS
+export HOME
+
+prune_dactive() {
+	if [ "`pidof $DBIN/diablo`" = "" ] && [ "`pidof $DREADERD`" = "" ]
+	then
+		dactive=`$DBIN/dpath server_dactive`
+		if [ -f "$dactive" ]
+		then
+			su news -s /bin/sh -c "$DBIN/dkp -t $dactive"
+			su news -s /bin/sh -c "$DBIN/dkp -s $dactive"
+		fi
+	fi
+}
+
+#
+#	See if we crashed the last time (rather than shutdown)
+#	and if so, refuse to start if the last article was
+#	received > 24 hrs ago.
+#
+check_downtime() {
+	if [ ! -f $PIDFILE ]
+	then
+		return 0
+	fi
+
+	if [ ! -f $DRINCOMING ]
+	then
+		return 0
+	fi
+
+	TOO_OLD=`find $DRINCOMING -mmin +$DRINCOMING_MAXAGE 2>/dev/null`
+	if [ -n "$TOO_OLD" ]
+	then
+		echo "$NAME: $PIDFILE exists -- unclean shutdown" >&2
+		echo "$NAME: $DRINCOMING: >$DRINCOMING_MAXAGE minutes old - not starting" >&2
+		return 1
+	fi
+
+	return 0
+}
+
+case "$1" in
+	start)
+
+		for M in $CHECKMOUNT
+		do
+			if ! grep -qs "^[^#].*[ 	]$M[ 	]" /etc/fstab
+			then
+				continue
+			fi
+			if ! mountpoint -q "$M"
+			then
+				echo "$NAME: $M not mounted: not starting" >&2
+				exit 1
+			fi
+		done
+		if [ "`pidof $DREADERD`" != "" ]
+		then
+			echo "$NAME is already running" >&2
+			exit 0
+		fi
+
+		check_downtime || exit 1
+
+		prune_dactive
+
+		echo -n "Starting $DESC: $NAME"
+		cd $NEWS/run || exit 1
+		find . -type f -name 'core.*' -mtime +1 -exec rm -f {} \;
+		ulimit -c unlimited
+		start-stop-daemon --start --quiet \
+			--chdir $NEWS/run \
+			--exec $DREADERD -- \
+			-s"                                                 " \
+			-T 0 -R 0 $FCO_ARG $XREF_ARG $PATH_ARG $DLC_ARG
+		echo "."
+		;;
+
+	stop)
+
+		echo -n "Stopping $DESC: $NAME"
+		$DBIN/drcmd exit > /dev/null
+		if [ "$?" != 0 ]
+		then
+			echo ": failed to stop."
+			exit 1
+		fi
+		echo "."
+		rm -f $PIDFILE
+		;;
+
+	restart|force-reload)
+		echo -n "Restarting $DESC: $NAME"
+		$DBIN/drcmd exit > /dev/null
+		if [ "$?" != 0 ]
+		then
+			echo ": failed to stop."
+			exit 1
+		fi
+		rm -f $PIDFILE
+		start-stop-daemon --start --quiet --exec $DREADERD -- \
+			-s"                                                 " \
+			-T 0 -R 0 $FCO_ARG $XREF_ARG $PATH_ARG $DLC_ARG
+		echo "."
+		;;
+
+	*)
+		echo "Usage: $SCRIPTNAME {start|stop|restart|force-reload}" >&2
+		exit 1
+		;;
+esac
+

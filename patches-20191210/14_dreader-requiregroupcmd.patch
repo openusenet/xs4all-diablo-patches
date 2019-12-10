@@ -1,0 +1,44 @@
+diff -druN diablo-6-CUR-20140422-00/dreaderd/defs.h diablo-6-CUR-20140422-00-work2/dreaderd/defs.h
+--- diablo-6-CUR-20140422-00/dreaderd/defs.h	2009-01-23 16:37:55.000000000 +0100
++++ diablo-6-CUR-20140422-00-work2/dreaderd/defs.h	2015-07-16 01:01:52.000000000 +0200
+@@ -203,6 +205,7 @@
+     int rd_MaxAgePolicy;
+     int rd_TurnOffNNPH;
+     int rd_XzverLevel;
++    int rd_RequireGroupCmd;
+ } ReaderDef;
+ 
+ typedef struct AccessDef {		/* Define the access list	*/
+diff -druN diablo-6-CUR-20140422-00/dreaderd/dns.c diablo-6-CUR-20140422-00-work2/dreaderd/dns.c
+--- diablo-6-CUR-20140422-00/dreaderd/dns.c	2015-07-06 22:21:27.000000000 +0200
++++ diablo-6-CUR-20140422-00-work2/dreaderd/dns.c	2015-07-16 01:36:29.000000000 +0200
+@@ -3000,6 +2949,13 @@
+ 			readerdef.rd_LogCmd = 0;
+ 		    continue;
+ 		}
++		if (*val && strcmp(opt, "requiregroupcmd") == 0) {
++		    if (*val == 'y' || *val == 'Y' || *val == '1')
++			readerdef.rd_RequireGroupCmd = 1;
++		    else
++			readerdef.rd_RequireGroupCmd = 0;
++		    continue;
++		}
+ #ifdef	IP_TOS
+ 		if (*val && strcmp(opt, "settos") == 0) {
+ 		    readerdef.rd_SetTOS = atoi(val);
+diff -druN diablo-6-CUR-20140422-00/dreaderd/nntp.c diablo-6-CUR-20140422-00-work2/dreaderd/nntp.c
+--- diablo-6-CUR-20140422-00/dreaderd/nntp.c	2009-01-23 16:37:55.000000000 +0100
++++ diablo-6-CUR-20140422-00-work2/dreaderd/nntp.c	2015-07-16 01:00:54.000000000 +0200
+@@ -310,6 +310,12 @@
+     ++conn->co_Auth.dr_ArtCount;
+ 
+     conn->co_RequestFlags = ARTFETCH_MSGID;
++    if (conn->co_Auth.dr_ReaderDef->rd_RequireGroupCmd &&
++		conn->co_GroupName == NULL) {
++	MBLogPrintf(conn, &conn->co_TMBuf, "412 Not in a newsgroup\r\n");
++	NNCommand(conn);
++	return;
++    }
+     if (artid == NULL) {
+ 	if (conn->co_GroupName == NULL) {
+ 	    MBLogPrintf(conn, &conn->co_TMBuf, "412 Not in a newsgroup\r\n");

@@ -1,0 +1,93 @@
+#! /bin/sh
+#
+# cron-hourly	Administrative scripts that should be run
+#		once an hour. This script tries to be smart
+#		and run whatever is needed.
+#
+# Options:	actsync=server.name.dom		Server to run actsync against
+#
+
+DCONF="diablo.config"
+
+NEWS=/news
+cd $NEWS
+[ -f $DCONF ] || exit 0
+
+LOG=`dbin/dpath log`
+exec >>$LOG/hourly.log 2>&1
+
+# Get key=value arguments
+while [ $# -gt 0 ]
+do
+	case "$1" in
+		actsync=*)
+			ACTSYNC=${1#*=}
+			;;
+		maxsleep=*)
+			MAXSLEEP=${1#*=}
+			;;
+		*)
+	esac
+	shift
+done
+
+# See what service are running.
+STATUS=`dbin/dicmd status 2>&1`
+case "$STATUS" in
+	[0-9]*)
+		DIABLO_UP=true
+	;;
+esac
+STATUS=`dbin/drcmd status 2>&1`
+case "$STATUS" in
+	*Connect*)
+		DREADER_UP=true
+	;;
+esac
+
+if ([ "$DIABLO_UP" = true ] || [ "$DREADER_UP" = true ]) && [ -n "$MAXSLEEP" ]
+then
+	# If hostname contains digits, we take the least significant
+	# digit, and sleep $digit * $MAXSLEEP / 10 minutes.
+	H=`hostname`
+	case "$H" in
+		*[0-9]*)
+			N=`echo "$H" |
+				sed -e 's/^[^0-9]*[0-9]*\([0-9]\).*$/\1/'`
+			SLEEP=$(( 6 * $N * $MAXSLEEP ))
+			sleep $SLEEP
+			;;
+	esac
+fi
+
+if [ "$DIABLO_UP" = true ]
+then
+	# Clean up spool
+	adm/adm-dexpire
+
+	# See if we need to backup history.
+	# Only if history is on ramfs and path_dumphist is set in diablo.config
+	DHISTORY=$(dbin/dpath dhistory)
+	DHISTDIR=$(dirname $DHISTORY)
+	df $DHISTDIR | tail -1 | grep -q -E 'ramfs|tmpfs|/dev/shm'
+	if [ $? = 0 ] && grep "^path_dumphist" $DCONF >/dev/null 2>&1
+	then
+		adm/adm-dhistbackup
+	fi
+fi
+
+if [ "$DREADER_UP" = true ]
+then
+	# Clean up cache
+	adm/adm-dexpirecache
+fi
+
+if [ "$DIABLO_UP" = true ] || [ "$DREADER_UP" = true ]
+then
+	if [ -n "$ACTSYNC" ]
+	then
+		# Synchronize active file with active master
+		adm/adm-actsync $ACTSYNC
+	fi
+fi
+

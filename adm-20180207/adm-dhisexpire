@@ -1,0 +1,113 @@
+#! /bin/sh
+#
+# dcleandb.full	This script trims the history and active file.
+#		(this is the /bin/sh version of biweekly.atrim)
+#		It should be run every night.
+#
+#		If history is not on a RAMFS, we can do a lot
+#		of stuff in place and this is fast and safe.
+#
+#		If history IS on a RAMFS, we have to pause the server
+#		while we are doing this and we have to ensure
+#		that no other operations, such as an expire, are
+#		in progress.  We do this by locking the .lock file
+#		AND pausing the server.
+#
+#		In that case, if you kill this script in the middle,
+#		you MUST remember to unpause the server!
+#
+
+NEWS=/news
+cd $NEWS
+
+# Make sure we have exclusive access.
+if [ x"$1" != x"locked" ]
+then
+	dbin/plock $NEWS/.dexpirelock adm/adm-dhisexpire locked
+	exit 0
+fi
+
+echo "`date` - $0 BEGIN"
+
+DHISTORY=`dbin/dpath dhistory`
+DACTIVE=`dbin/dpath server_dactive`
+DB=`dbin/dpath db`
+
+# Find out if history is on a RAMFS.
+case "$DHISTORY" in
+	$DB/*/*)
+		RAMFS=true
+		;;
+	$DB/*)
+		;;
+	*)
+		RAMFS=true
+		;;
+esac
+
+if false && [ -x /usr/bin/ionice ]
+then
+	IONICE=ionice -c 2 -n 7
+else
+	IONICE=
+fi
+
+if [ "$RAMFS" = true ]
+then
+	# Set diablo to readonly mode.
+	dbin/dicmd flush
+	dbin/dicmd readonly
+	dbin/dicmd flush
+
+	# Remove the old backup
+	rm -f $DB/dhistory.new
+	rm -f $DB/dhistory.bak
+
+	# Run expire.
+	$IONICE dbin/dhisexpire -o0 -m $DHISTORY $DB/dhistory.new
+	EXPIRESTATUS=$?
+
+	# Pause diablo completely.
+	dbin/dicmd pause
+	PAUSED=true
+
+	if [ $EXPIRESTATUS = 0 ]
+	then
+		# All went well, copy new file into place.
+		$IONICE cp -fp $DHISTORY $DB/dhistory.bak
+		if $IONICE cp -fp $DB/dhistory.new $DHISTORY
+		then
+			rm -f $DB/dhistory.new
+		fi
+		echo "History file trim succeeded:"
+		ls -la $DHISTORY $DB/dhistory.bak
+	else 
+		# Something went wrong.
+		rm -f $DB/dhistory.new
+		echo "Unable to trim $DHISTORY file"
+	fi
+else
+	# Pause anyway, because sometimes running diablo processes
+	# do not reopen the history file. Need to look into this.
+	dbin/dicmd flush
+	dbin/dicmd readonly
+	dbin/dicmd flush
+
+	# Standard expire run.
+	dbin/dhisexpire -a $DHISTORY
+
+	dbin/dicmd pause
+	PAUSED=true
+fi
+
+# Trim the active file.
+dbin/dkp -t $DACTIVE
+
+# Resume diablo in case we paused it.
+if [ "$PAUSED" = true ]
+then
+	dbin/dicmd go
+fi
+
+echo "`date` - $0 END"
+

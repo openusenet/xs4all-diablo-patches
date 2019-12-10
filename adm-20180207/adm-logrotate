@@ -1,0 +1,96 @@
+#! /bin/bash
+#
+# adm-logrotate	rotate non-SYSLOG maintained log files
+#		(this is the /bin/sh version of daily.atrim)
+#		This should be run once a day.
+#
+# arguments:	log=logfile[,logfile] (may contain wildcards)
+#		Useful if you want just one or a few files to
+#		be rotated by a cronjob more than once a day.
+#		E.g. 20 12 * * * adm/adm-logrotate log="*incoming.log"
+#
+
+# How long to keep logs.
+CYCLES=7
+
+# Location of diablo.config file.
+DCONFIG="diablo.config"
+
+# Which selection of files to rotate
+LOGPAT="*"
+
+NEWS=/news
+cd $NEWS
+
+echo "`date` - $0 BEGIN"
+
+# Get key=value arguments
+while [ $# -gt 0 ]
+do
+	case "$1" in
+		log=*)
+			LOGPAT=${1#*=}
+			;;
+		cycles=*)
+			CYCLES=${1#*=}
+			;;
+	esac
+	shift
+done
+
+LOGDIR=`dbin/dpath log`
+
+# incoming.log and drincoming.log need to be rotated as well.
+INCLOG=`sed -ne 's!^path_incominglog[ 	]*\(.*\)!\1!p' < $DCONFIG`
+case "$INCLOG" in
+	*NONE|*SYSLOG|*\|*)
+		INCLOG=""
+		;;
+	*%s*)
+		INCLOG=`echo $INCLOG | sed -e "s/%s/$LOGDIR/"`
+		;;
+esac
+DRINCLOG=`sed -ne 's!^path_drincominglog[ 	]*\(.*\)!\1!p' < $DCONFIG`
+case "$DRINCLOG" in
+	*NONE|*SYSLOG|*\|*)
+		DRINCLOG=""
+		;;
+	*%s*)
+		DRINCLOG=`echo $DRINCLOG | sed -e "s/%s/$LOGDIR/"`
+		;;
+esac
+
+LOGS=""
+for L in	$CYCLES \
+		$LOGDIR/5mins.log \
+		$LOGDIR/hourly.log \
+		$LOGDIR/daily.log \
+		$LOGDIR/weekly.log \
+		$LOGDIR/dspoolout.log \
+		$LOGDIR/control.log \
+		$LOGDIR/miscctl \
+		$LOGDIR/newgroup \
+		$LOGDIR/newgroup.alt \
+		$LOGDIR/newgroup.other \
+		$LOGDIR/newgroup.log \
+		$LOGDIR/rmgroup \
+		$LOGDIR/rmgroup.alt \
+		$LOGDIR/rmgroup.other \
+		$LOGDIR/rmgroup.log \
+		$LOGDIR/checkgroups \
+		$LOGDIR/checkgroups.alt \
+		$LOGDIR/checkgroups.other \
+		$LOGDIR/checkgroups.log \
+		$INCLOG $DRINCLOG
+do
+	OK=`eval "case \"$L\" in $LOGPAT) echo OK;; esac"`
+	if [ "$OK" = 'OK' ]
+	then
+		LOGS="$LOGS $L"
+	fi
+done
+
+adm/rot $CYCLES	$LOGS
+
+echo "`date` - $0 END"  
+

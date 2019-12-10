@@ -1,0 +1,25 @@
+#! /bin/sh
+#
+# adm-dexpire	The expire run. Removes files from the newsspool
+#		until there is enough space, as defined in
+#		dspool.ctl.
+#
+#		Should be run often, every hour or few hours.
+#
+
+NEWS=/news
+
+cd $NEWS
+echo "`date` $0 BEGIN"
+
+# The -s option is only really necessary if you are running on a
+# softupdates-enabled partition, which is on most BSDs.
+case `uname -s` in
+	*[Bb][Ss][Dd]*)
+		SOFTUPDATES="-s4"
+		;;
+esac
+dbin/plock -t $NEWS/.dexpirelock dbin/dexpire -a $SOFTUPDATES
+
+echo "`date` $0 END"
+

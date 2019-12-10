@@ -1,0 +1,437 @@
+diff -ruN diablo-6-CUR-20140422-00.a/contrib/xtrace/decrypt-aes.sh diablo-6-CUR-20140422-00/contrib/xtrace/decrypt-aes.sh
+--- diablo-6-CUR-20140422-00.a/contrib/xtrace/decrypt-aes.sh	1970-01-01 01:00:00.000000000 +0100
++++ diablo-6-CUR-20140422-00/contrib/xtrace/decrypt-aes.sh	2018-05-29 18:04:28.934216921 +0200
+@@ -0,0 +1,27 @@
++#! /bin/bash
++
++if [ $# != 1 ]
++then
++	exec >&2
++	echo "usage: decrypt-aes pass:<PASSWORD>"
++	echo
++	echo "To decrypt a Diablo encrypted X-Trace header, run this program, specifying"
++	echo "the password used for encryption.  Feed the entire X-Trace: line, including"
++	echo "the X-Trace: header token, to this program, and it will return the"
++	echo "original data."
++	exit 1
++fi
++
++XT=$(sed -ne 's/^X-Trace: //p')
++C=$(echo "$XT" | sed -e 's/^\(.*,\|\)\(DX\|\)C=\([^,]\+\).*$/\3/')
++if [ "$C" != "" ]
++then
++	D=$(echo "$C" | openssl enc -aes-256-cbc -d -a -pass "$1" || exit 1)
++	echo
++	echo "**>> $C <<**"
++	echo "==>> $D <<=="
++	exit 0
++fi
++
++exit 1
++
+diff -ruN diablo-6-CUR-20140422-00.a/dreaderd/XMakefile diablo-6-CUR-20140422-00/dreaderd/XMakefile
+--- diablo-6-CUR-20140422-00.a/dreaderd/XMakefile	2018-05-29 15:15:28.231621208 +0200
++++ diablo-6-CUR-20140422-00/dreaderd/XMakefile	2018-05-23 18:12:17.816002405 +0200
+@@ -4,7 +4,8 @@
+ .set OSRCS	thread.c reader.c dns.c mbuf.c subs.c list.c feed.c \
+ 		xover.c nntp.c misc.c post.c server.c group.c spool.c \
+ 		cache.c rtstatus.c control.c wildorcmp.c cancel.c \
+-		post-addr-ck.c cleanfrom.c msg.c dfa.c filealloc.c
++		post-addr-ck.c cleanfrom.c msg.c dfa.c filealloc.c \
++		crypto.c
+ .set SRCS	main.c $(OSRCS)
+ .set LIBOBJS	$(OSRCS:"*.c":"$(BD)obj/dr_*.o")
+ .set OBJS	$(SRCS:"*.c":"$(BD)obj/dr_*.o")
+diff -ruN diablo-6-CUR-20140422-00.a/dreaderd/crypto.c diablo-6-CUR-20140422-00/dreaderd/crypto.c
+--- diablo-6-CUR-20140422-00.a/dreaderd/crypto.c	1970-01-01 01:00:00.000000000 +0100
++++ diablo-6-CUR-20140422-00/dreaderd/crypto.c	2018-05-23 18:12:17.820002371 +0200
+@@ -0,0 +1,116 @@
++/*
++ * crypto.c	Modern crypt/hash functions.
++ *
++ * aes_encrypt:	Appplies the same encryption method as the openssl command:
++ *		echo "plaintext" | openssl enc -aes-256-cbc -base64
++ *
++ *		So the data can be decrypted with the openssl command:
++ *		echo "crypted" | openssl enc -d -aes-256-cbc -base64
++ *
++ * sha256hash:	What it says on the label.
++ *
++ */
++#include "defs.h"
++
++#ifdef POST_CRYPTXTRACE
++
++#include <string.h>
++#include <openssl/evp.h>
++#include <openssl/bio.h>
++#include <openssl/buffer.h>
++#include <openssl/rand.h>
++#include <openssl/sha.h>
++
++#define ASSERT(x) \
++    do { \
++        if ((x) == 0) { \
++            fprintf(stderr, "%s:%d: %s: Assertion %s failed.\n", \
++                __FILE__, __LINE__, __FUNCTION__, #x); \
++                goto fail; \
++        } \
++    } while(0)
++
++static char *base64(unsigned char *data, size_t data_sz) {
++
++    char *result = NULL;
++
++    BIO *b64 = BIO_new(BIO_f_base64());
++    BIO *bio = BIO_new(BIO_s_mem());
++    bio = BIO_push(b64, bio);
++    ASSERT(bio != NULL);
++
++    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
++    ASSERT(BIO_write(bio, data, data_sz) == data_sz);
++    BIO_flush(bio);
++
++    BUF_MEM *bufferPtr;
++    BIO_get_mem_ptr(bio, &bufferPtr);
++    result = malloc(bufferPtr->length + 1);
++    memcpy(result, bufferPtr->data, bufferPtr->length);
++    result[bufferPtr->length] = 0;
++
++fail:
++    BIO_free_all(bio);
++
++    return result;
++}
++
++char *aes_encrypt(char *pass, unsigned char *data, size_t data_sz) {
++    unsigned char salt[8] = { 0 };
++    unsigned char key[32] = { 0 };
++    unsigned char iv[16]  = { 0 };
++    unsigned char *result = NULL;
++    char *result_b64 = NULL;
++
++    const EVP_CIPHER *cipher = EVP_aes_256_cbc();
++    const EVP_MD *md = EVP_sha256();
++
++    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
++
++    ASSERT(RAND_bytes(salt, sizeof(salt)) == 1);
++    const size_t pass_sz = strlen(pass);
++    ASSERT(EVP_BytesToKey(cipher, md, salt, (unsigned char *)pass, pass_sz, 1, key, iv) == 32);
++
++    ASSERT(EVP_EncryptInit_ex(ctx, cipher, 0, key, iv) == 1);
++
++    size_t ctxbz = EVP_CIPHER_CTX_block_size(ctx);
++    result = calloc(1, 16 + data_sz + ctxbz);
++
++    memcpy(result, "Salted__", 8);
++    memcpy(result + 8, salt, 8);
++    unsigned char *enc = result + 16;
++
++    int enc_sz;
++    ASSERT(EVP_EncryptUpdate(ctx, enc, &enc_sz, data, data_sz) == 1);
++
++    int enc_sz2;
++    ASSERT(EVP_EncryptFinal_ex(ctx, enc + enc_sz, &enc_sz2) == 1);
++    enc_sz += enc_sz2;
++
++    ASSERT(EVP_CIPHER_CTX_cleanup(ctx) == 1);
++
++    result_b64 = base64(result, 16 + enc_sz);
++    goto exit;
++
++fail:
++    free(result_b64);
++    result_b64 = NULL;
++
++exit:
++    free(result);
++    EVP_CIPHER_CTX_free(ctx);
++
++    return result_b64;
++}
++
++unsigned char *sha256hash(char *input)
++{
++	static unsigned char hash[SHA256_DIGEST_LENGTH];
++	SHA256_CTX sha256;
++	SHA256_Init(&sha256);
++	SHA256_Update(&sha256, (unsigned char *)input, strlen(input));
++	SHA256_Final(hash, &sha256);
++	return hash;
++}
++
++#endif /* POST_CRYPTXTRACE */
+diff -ruN diablo-6-CUR-20140422-00.a/dreaderd/defs.h diablo-6-CUR-20140422-00/dreaderd/defs.h
+--- diablo-6-CUR-20140422-00.a/dreaderd/defs.h	2018-05-29 15:15:28.275620853 +0200
++++ diablo-6-CUR-20140422-00/dreaderd/defs.h	2018-05-29 14:46:11.501790996 +0200
+@@ -126,7 +126,7 @@
+     char vs_NewsAdm[64];
+     char vs_Org[128];
+     char vs_AbuseTo[64];
+-    char vs_CryptPw[32];
++    char vs_CryptPw[64];
+     char vs_Interface[MAXVSINTERFACE][48];
+     char vs_AccessFile[128];
+     int vs_NoXrefHostUpdate;
+diff -ruN diablo-6-CUR-20140422-00.a/dreaderd/post.c diablo-6-CUR-20140422-00/dreaderd/post.c
+--- diablo-6-CUR-20140422-00.a/dreaderd/post.c	2009-06-03 16:45:52.000000000 +0200
++++ diablo-6-CUR-20140422-00/dreaderd/post.c	2018-05-29 16:22:35.295174846 +0200
+@@ -33,6 +33,10 @@
+ char *PostXFilter(char *base, int artLen, Connection *conn);
+ #endif
+ 
++#ifdef	POST_CRYPTXTRACE
++char *aes_encrypt(char *pass, unsigned char *data, size_t data_sz);
++unsigned char *sha256hash(char *);
++#endif
+ 
+ Prototype void NNPostBuffer(Connection *conn);
+ Prototype void NNPostCommand1(Connection *conn);
+@@ -64,7 +68,11 @@
+ 	/* Safety: in the event we cant md5, then leave some useful
+ 	   data in md5buf */
+ 	snprintf(md5buf, sizeof(md5buf), "%s", node);
++#ifdef	POST_CRYPTXTRACE
++	md5hashstr((md5hash_t *)sha256hash(buffer), md5buf);
++#else
+ 	md5hashstr(md5hash(buffer), md5buf);
++#endif
+ 	/* Clip the string.  8 digits is enough */
+ 	md5buf[8] = '\0';
+ 	snprintf(res, sizeof(res), "%s.%s", md5buf, vserv);
+@@ -72,136 +80,16 @@
+ }
+ 
+ #ifdef	POST_CRYPTXTRACE
+-
+-/* JG19990908 encrypt (for loose def'n of encrypt, heh) X-Trace, presenting
+-   a uuencode-style line that can be decoded by abuse */
+-
+ char *XTRAMangle(char *xtrace, char *cryptpw)
+ {
+ 	static char res[256];
+-	char *rptr, *xptr;
+-	int count;
+-	unsigned char plain[8], enc[8];
+-	des_cblock key;
+-	des_key_schedule sched;
+-
+-	des_string_to_key(cryptpw, &key);
+-	des_set_key(&key, sched);
+-
+-	rptr = res;
+-
+-	/* Overflow protect; 192 chars expands to 256, overflowing res */
+-	if (strlen(xtrace) > 191) {
+-		xtrace[191] = '\0';
+-	}
+-
+-	/* Step thru 'xtrace' 8 chars at a time, encrypt as we go */
+-	xptr = xtrace;
+-	count = 0;
+-	bzero(plain, sizeof(plain));
+-	while (*xptr) {
+-	    plain[count++ % 8] = *xptr++;
+-	    if (! *xptr || (count % 8) == 0) {
+-		/* Encrypt block of (up to) 8 and pump out coded ASCII */
+-		des_ecb_encrypt((des_cblock *)plain,(des_cblock *)enc, sched, 1);
+-		bzero(plain, sizeof(plain));
+-		*rptr++ = '0' + (enc[0] & 0x3f);
+-		*rptr++ = '0' + (enc[0] >> 6) + ((enc[1] & 0x0f) << 2);
+-		*rptr++ = '0' + (enc[1] >> 4) + ((enc[2] & 0x03) << 4);
+-		*rptr++ = '0' + (enc[2] >> 2);
+-		*rptr++ = '0' + (enc[3] & 0x3f);
+-		*rptr++ = '0' + (enc[3] >> 6) + ((enc[4] & 0x0f) << 2);
+-		*rptr++ = '0' + (enc[4] >> 4) + ((enc[5] & 0x03) << 4);
+-		*rptr++ = '0' + (enc[5] >> 2);
+-		*rptr++ = '0' + (enc[6] & 0x3f);
+-		*rptr++ = '0' + (enc[6] >> 6) + ((enc[7] & 0x0f) << 2);
+-		*rptr++ = '0' + (enc[7] >> 4) + ((time(NULL) & 0x03) << 4);
+-	    }
++	char *c = aes_encrypt(cryptpw, (unsigned char *)xtrace, strlen(xtrace));
++	if (c != NULL) {
++	    snprintf(res, sizeof(res), "%s", c);
++	    free(c);
++	    return res;
+ 	}
+-	*rptr = '\0';
+-	return(res);
+-}
+-
+-char *XTRAUnmangle(char *str, char *cryptpw)
+-{
+-	static char res[256];
+-	char *rptr, *sptr;
+-	int count, i;
+-	unsigned char plain[8], enc[8];
+-	des_cblock key;
+-	des_key_schedule sched;
+-
+-	des_string_to_key(cryptpw, &key);
+-	des_set_key(&key, sched);
+-
+-	if (! strncmp(str, "DXC=", 4)) {
+-		str += 4;
+-	}
+-
+-	*res = '\0';
+-	if (strlen(str) % 11) {
+-		snprintf(res, sizeof(res), "(X-Trace damaged; may not decode OK) ");
+-	}
+-
+-	rptr = res + strlen(res);
+-	
+-	sptr = str;
+-	count = 0;
+-	bzero(enc, sizeof(enc));
+-	while (*sptr) {
+-	    switch (count % 11) {
+-		case 0:
+-		    enc[0] = (*sptr - '0');
+-		    break;
+-		case 1:
+-		    enc[0] += ((*sptr - '0') & 0x03) << 6;
+-		    enc[1] = (*sptr - '0') >> 2;
+-		    break;
+-		case 2:
+-		    enc[1] += ((*sptr - '0') & 0x0f) << 4;
+-		    enc[2] = (*sptr - '0') >> 4;
+-		    break;
+-		case 3:
+-		    enc[2] += (*sptr - '0') << 2;
+-		    break;
+-		case 4:
+-		    enc[3] = (*sptr - '0');
+-		    break;
+-		case 5:
+-		    enc[3] += ((*sptr - '0') & 0x03) << 6;
+-		    enc[4] = (*sptr - '0') >> 2;
+-		    break;
+-		case 6:
+-		    enc[4] += ((*sptr - '0') & 0x0f) << 4;
+-		    enc[5] = (*sptr - '0') >> 4;
+-		    break;
+-		case 7:
+-		    enc[5] += (*sptr - '0') << 2;
+-		    break;
+-		case 8:
+-		    enc[6] = (*sptr - '0');
+-		    break;
+-		case 9:
+-		    enc[6] += ((*sptr - '0') & 0x03) << 6;
+-		    enc[7] = (*sptr - '0') >> 2;
+-		    break;
+-		case 10:
+-		    enc[7] += ((*sptr - '0') & 0x0f) << 4;
+-		    break;
+-	    }
+-	    count++;
+-	    sptr++;
+-	    if (! *sptr || (count % 11) == 0) {
+-		/* Decrypt block of (up to) 8 and pump out plain ASCII */
+-		des_ecb_encrypt((des_cblock *)enc,(des_cblock *)plain, sched, 0);
+-		bzero(enc, sizeof(enc));
+-		for (i = 0; i < 8; i++) {
+-			*rptr++ = plain[i];
+-		}
+-	    }
+-	}
+-	*rptr = '\0';
+-	return(res);
++	return "unavailable";
+ }
+ #endif
+ 
+@@ -618,15 +506,35 @@
+ 	}
+ #endif
+ 
++	char cryptbuf[64];
++	char *cryptpw = NULL;
++	char *cryptgen = NULL;
++	if (*conn->co_Auth.dr_VServerDef->vs_CryptPw) {
++		strncpy(cryptbuf, conn->co_Auth.dr_VServerDef->vs_CryptPw,
++						sizeof(cryptbuf) - 1);
++		cryptbuf[sizeof(cryptbuf) - 1] = 0;
++
++		// support G=generation,P=password format.
++		char *s = strtok(cryptbuf, ",");
++		while (s) {
++			if (strncmp(s, "G=", 2) == 0)
++				cryptgen = s + 2;
++			if (strncmp(s, "P=", 2) == 0)
++				cryptpw = s + 2;
++			s = strtok(NULL, ",");
++		}
++		if (cryptpw == NULL)
++			cryptpw = conn->co_Auth.dr_VServerDef->vs_CryptPw;
++	}
++
+ 	/*
+ 	 * Add NNTP-Posting-Host:
+ 	 */
+ 	if (! conn->co_Auth.dr_ReaderDef->rd_TurnOffNNPH) {
+-	    if (*conn->co_Auth.dr_VServerDef->vs_CryptPw)
++	    if (cryptpw)
+ 	        MBPrintf(&tmbuf, "NNTP-Posting-Host: %s\r\n",
+ 		    NNPHMangle(conn->co_Auth.dr_VServerDef->vs_ClusterName,
+-			    conn->co_Auth.dr_Host,
+-			    conn->co_Auth.dr_VServerDef->vs_CryptPw));
++			    conn->co_Auth.dr_Host, cryptpw));
+ 	    else
+ 	        MBPrintf(&tmbuf, "NNTP-Posting-Host: %s\r\n", conn->co_Auth.dr_Host);
+ 	}
+@@ -635,7 +543,7 @@
+ 	 * Add X-Trace:
+ 	 */
+ #ifdef  POST_CRYPTXTRACE
+-	if (*conn->co_Auth.dr_VServerDef->vs_CryptPw) {
++	if (cryptpw) {
+ 	    snprintf(xtrace, sizeof(xtrace), "%lu %s %d %s%s%s%s%s",
+ 		(unsigned long)t,
+ 		conn->co_Auth.dr_VServerDef->vs_HostName,
+@@ -646,8 +554,12 @@
+ 		*conn->co_Auth.dr_IdentUser ? "@" : "",
+ 		NetAddrToSt(0, (struct sockaddr *)&conn->co_Auth.dr_Addr, 1, 1, 1)
+ 	    );
+-	    MBPrintf(&tmbuf, "X-Trace: DXC=%s\r\n",
+-		XTRAMangle(xtrace, conn->co_Auth.dr_VServerDef->vs_CryptPw));
++	    if (cryptgen) {
++		MBPrintf(&tmbuf, "X-Trace: G=%s,C=%s\r\n", cryptgen,
++		    XTRAMangle(xtrace, cryptpw));
++	    } else {
++		MBPrintf(&tmbuf, "X-Trace: C=%s\r\n", XTRAMangle(xtrace, cryptpw));
++	    }
+ 	} else
+ #endif
+ 	    MBPrintf(&tmbuf, "X-Trace: %lu %s %d %s%s%s%s%s\r\n",
+diff -ruN diablo-6-CUR-20140422-00.a/lib/defs.h diablo-6-CUR-20140422-00/lib/defs.h
+--- diablo-6-CUR-20140422-00.a/lib/defs.h	2018-05-29 15:15:28.223621272 +0200
++++ diablo-6-CUR-20140422-00/lib/defs.h	2018-05-23 18:12:17.820002371 +0200
+@@ -103,13 +103,6 @@
+ #ifdef	POST_HIDENNTPPOSTHOST
+ #include	<md5.h>
+ #endif
+-#ifdef	POST_CRYPTXTRACE
+-#if __FreeBSD_version > 470100
+-#include        <openssl/des.h>
+-#else
+-#include	<des.h>
+-#endif
+-#endif
+ #ifdef	NETREMOTE_ENABLED
+ #if __FreeBSD_version > 470100
+ #include        <openssl/des.h>
+diff -ruN diablo-6-CUR-20140422-00.a/lib/vendor.h diablo-6-CUR-20140422-00/lib/vendor.h
+--- diablo-6-CUR-20140422-00.a/lib/vendor.h	2018-05-29 15:15:28.259620981 +0200
++++ diablo-6-CUR-20140422-00/lib/vendor.h	2018-05-23 18:12:17.820002371 +0200
+@@ -72,7 +72,7 @@
+ #undef	POST_NNTP_POSTING_DATE_LOCALTIME
+ 
+ /*
+- * When posting a message, encrypt the X-Trace line with DES.  Again,
++ * When posting a message, encrypt the X-Trace line with AES256.  Again,
+  * highly recommended.
+  */
+ 

@@ -1,0 +1,44 @@
+#! /bin/sh
+#
+# cron-daily	Administrative scripts that should be run
+#		once a day. This script tries to be smart
+#		and run whatever is needed.
+#
+
+NEWS=/news
+cd $NEWS
+[ -f diablo.config ] || exit 0
+
+LOG=`dbin/dpath log`
+exec >>$LOG/daily.log 2>&1
+
+# See what services are running.
+STATUS=`dbin/dicmd status 2>&1`
+case "$STATUS" in
+	[0-9]*)
+		DIABLO_UP=true
+	;;
+esac
+STATUS=`dbin/drcmd status 2>&1`
+case "$STATUS" in
+	*Connect*)
+		DREADER_UP=true
+	;;
+esac
+
+# Rotate logfiles.
+adm/adm-logrotate
+exec >>$LOG/daily.log 2>&1
+
+if [ "$DIABLO_UP" = true ]
+then
+	# Clean up history file.
+	adm/adm-dhisexpire
+fi
+
+if [ "$DREADER_UP" = true ]
+then
+	# Expire overview database.
+	adm/adm-dexpireover
+fi
+

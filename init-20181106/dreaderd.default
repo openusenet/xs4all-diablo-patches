@@ -1,0 +1,11 @@
+# Settings for the dreaderd init script.
+
+# If set, overrides "readerxrefslavehost" from diablo.config
+#XREFHOST=article.news.xs4all.nl
+# If set, overrides the default which is the local hostname.
+#PATHHOST=newszilla.xs4all.nl
+# This sets the -c option to dreaderd(8)
+DELAYEDCLOSE=10
+# This sets the -f option to dreaderd(8)
+FASTCOPYOPT=0
+

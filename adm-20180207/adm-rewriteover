@@ -1,0 +1,33 @@
+#! /bin/sh
+#
+# adm-rewriteover
+#
+#		This script runs dexpireover with the -R option, which
+#		truely cleans up the overview database. It rewrites the
+#		entire database which can take a while but only needs to
+#		be run once a week or possibly even once a month.
+#
+#		dexpireover -a -R is able to cleanout more data from
+#		the data.* files whereas dexpireover -a is only able
+#		to remove whole data.* files (i.e. it cannot remove the
+#		file until the entire contents of the file has expired).
+#
+#		Called from cron-weekly, but disabled by default
+#		since it can cause a corrupted overview database.
+#		It's experimental and a bit buggy.
+
+NEWS=/news
+cd $NEWS
+
+echo "`date` - $0 BEGIN"
+
+cd
+GROUP=`dbin/dpath group`
+
+if [ -d "$GROUP/" ]
+then
+	dbin/plock -t $NEWS/.dexpireoverlock dbin/dexpireover -a -R -l720
+fi
+
+echo "`date` - $0 END"
+

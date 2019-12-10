@@ -1,0 +1,33 @@
+diff -ruN diablo-5-CUR-20090530-00.x/XMakefile.inc diablo-5-CUR-20090530-00/XMakefile.inc
+--- diablo-5-CUR-20090530-00.x/XMakefile.inc	2011-10-28 23:49:33.000000000 +0200
++++ diablo-5-CUR-20090530-00/XMakefile.inc	2011-10-28 23:48:57.000000000 +0200
+@@ -21,6 +21,7 @@
+ #endif
+ 
+ .set LFLAGS	-L$(BD)obj -lfilter -ldiablo -lutil -lm
++.set DR_LFLAGS	${LFLAGS}
+ .set IDIR	/news
+ .set MDIR	/news/man
+ .set INSTALL	install
+@@ -44,7 +45,8 @@
+ 
+ #ifdef __linux__
+ .set CFLAGS	-g -O2 -Wall -Wstrict-prototypes "-I$(BD)" $(CDEFINES) -D_FILE_OFFSET_BITS=64
+-.set LFLAGS "-L$(BD)obj" -lfilter -ldiablo -lm -lz -lrt
++.set LFLAGS	-L$(BD)obj -lfilter -ldiablo -lm -lz
++.set DR_LFLAGS	-L$(BD)obj -ldiablo -lm -lz
+ #endif
+ 
+ #ifdef __osf__
+diff -ruN diablo-5-CUR-20090530-00.x/dreaderd/XMakefile diablo-5-CUR-20090530-00/dreaderd/XMakefile
+--- diablo-5-CUR-20090530-00.x/dreaderd/XMakefile	2011-07-04 16:14:42.000000000 +0200
++++ diablo-5-CUR-20090530-00/dreaderd/XMakefile	2011-10-28 23:36:56.000000000 +0200
+@@ -15,7 +15,7 @@
+ all:	$(PROTOS) $(PROG) $(RLIB)
+ 
+ $(PROG) : $(OBJS)
+-	$(CC) $(CFLAGS) %(right) -o %(left) $(LFLAGS)
++	$(CC) $(CFLAGS) %(right) -o %(left) $(DR_LFLAGS)
+ 
+ $(OBJS) : $(SRCS)
+ 	$(CC) $(CFLAGS) %(right) -o %(left) -c

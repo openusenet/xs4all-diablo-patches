@@ -1,0 +1,17 @@
+--- diablo-5-CUR-20090530-00/dreaderd/reader.c.ORIG	2012-02-16 19:51:33.000000000 +0100
++++ diablo-5-CUR-20090530-00/dreaderd/reader.c	2012-02-16 19:50:58.000000000 +0100
+@@ -553,6 +553,14 @@
+     if (dres)
+ 	conn->co_Auth = *dres;
+ 
++    /*
++     * Default support for large article numbers (>2147483647)
++     * This doesn't conform to RFC3977 paragraph 6, which says
++     * "Article numbers MUST lie between 1 and 2,147,483,647, inclusive."
++     * but most clients support it anyway.
++     */
++    conn->co_Numbering = CON_RFC977;
++
+     conn->co_Desc = desc;
+     conn->co_MemPool = pool;
+     gettimeofday(&conn->co_RateTv, NULL);

@@ -1,0 +1,21 @@
+#! /bin/sh
+#
+# adm-dexpirecache	
+#		Expire the dreaderd cache files.
+#
+
+# How much space to free in blocks of 1K.
+FREEBLOCKS=20971520
+
+NEWS=/news
+cd $NEWS
+
+CACHE=`dbin/dpath cache`
+
+if [ -d "$CACHE/" ]
+then
+	echo "`date` $0 BEGIN"
+	dbin/dexpirecache -f $FREEBLOCKS -d $CACHE
+	echo "`date` $0 END"
+fi
+

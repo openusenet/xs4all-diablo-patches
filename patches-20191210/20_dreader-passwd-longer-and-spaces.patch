@@ -1,0 +1,37 @@
+diff -ruN diablo-6-CUR-20170901-00.a/dreaderd/defs.h diablo-6-CUR-20170901-00/dreaderd/defs.h
+--- diablo-6-CUR-20170901-00.a/dreaderd/defs.h	2018-08-27 14:29:54.851443378 +0200
++++ diablo-6-CUR-20170901-00/dreaderd/defs.h	2018-08-27 13:49:04.459172025 +0200
+@@ -248,6 +248,6 @@
+     struct sockaddr_storage dr_LSin;	/* local interface		*/
+     struct sockaddr_storage dr_RSin;	/* remote ip:port		*/
+     char dr_AuthUser[64];		/* authinfo user		*/
+-    char dr_AuthPass[16];		/* authinfo pass		*/
++    char dr_AuthPass[64];		/* authinfo pass		*/
+     int dr_ResultFlags;			/* see #defines below		*/
+     double dr_ByteCount;		/* how many bytes sent - stats	*/
+@@ -299,7 +299,7 @@
+     char dr_VServer[DEFNAMELEN];	/* the virtual server		*/
+     char dr_IdentUser[16];		/* the ident username		*/
+     char dr_AuthUser[64];		/* the authinfo user		*/
+-    char dr_AuthPass[16];		/* the authinfo pass		*/
++    char dr_AuthPass[64];		/* the authinfo pass		*/
+     int dr_DnsMismatch;			/* Fwd/Rev DNS don't match	*/
+     int dr_ResultFlags;			/* see #defines above		*/
+     int dr_StaticAuth;			/* don't change auth details	*/
+diff -ruN diablo-6-CUR-20170901-00.a/dreaderd/nntp.c diablo-6-CUR-20170901-00/dreaderd/nntp.c
+--- diablo-6-CUR-20170901-00.a/dreaderd/nntp.c	2018-08-27 14:31:11.646824797 +0200
++++ diablo-6-CUR-20170901-00/dreaderd/nntp.c	2018-08-27 14:24:00.182300189 +0200
+@@ -76,9 +76,12 @@
+ NNTPAuthInfo(Connection *conn, char **pptr)
+ {
+     char *type = parseword(pptr, " \t");
+-    char *args = (type) ? parseword(pptr, " \t") : NULL;
++    char *args = NULL;
+     int ok = 0;
+ 
++    if (type != NULL)
++	args = strcasecmp(type, "pass") == 0 ? *pptr : parseword(pptr, " \t");
++
+     if (type && args && strlen(args) < 64) {
+ 	if (strcasecmp(type, "user") == 0) {
+ 	    strncpy(conn->co_Auth.dr_AuthUser, args,

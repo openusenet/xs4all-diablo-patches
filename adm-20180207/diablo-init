@@ -1,0 +1,193 @@
+#! /bin/sh
+#
+# diablo-init
+#
+# Helper script to be called from systemd's diablo.service.
+# Adapted from the sysvinit script.
+#
+
+NEWS=/news
+DBIN=$NEWS/dbin
+DAEMON=$DBIN/diablo
+NAME=diablo
+DESC="Diablo feeder"
+
+PIDFILE=/var/run/$NAME.pid
+SCRIPTNAME=/etc/init.d/$NAME
+
+dconf_opt() {
+	sed -ne "s/^$1"'[ 	]\+\([^ 	]\+\).*$/\1/p' "$NEWS/diablo.config"
+}
+
+check_prereqs() {
+	if [ ! -f "$NEWS/diablo.config" ]
+	then
+		echo "$0 can't start, $NEWS/diablo.config not found." >&2
+		exit 1
+	fi
+
+	if [ "$(dconf_opt active)" = "on" ]
+	then
+		if [ ! -f $NEWS/db/dactive.kp ]
+		then
+			echo "$0 can't start, $NEWS/db/dactive.kp  not found." >&2
+			exit 1
+		fi
+		touch -d "1 day ago" $NEWS/tmp/stamp.$$
+		trap "rm -f $NEWS/tmp/stamp.$$" EXIT
+		if [ $NEWS/tmp/stamp.$$ -nt $NEWS/db/dactive.kp ]
+		then
+			case $(hostname) in
+				*article*|*number*)
+					echo "$0 can't start, $NEWS/db/dactive.kp out of date." >&2		
+					exit 1
+					;;
+			esac
+		fi
+	fi
+
+	if [ ! -f $NEWS/db/dhistory ] && [ ! -f $NEWS/db/dhistory.snp ]
+	then
+		echo "$0 can't start, history file not found." >&2
+		echo "   on fresh installs, create it using:" >&2
+		echo "   su news -s /bin/sh -c '$NEWS/dbin/diload $NEWS/db/dhistory </dev/null'" >&2
+		exit 1
+	fi
+}
+
+history() {
+	if [ "$(dconf_opt path_dhistory)" != $NEWS/history/dhistory ]
+	then
+		return 0
+	fi
+	if [ -L $NEWS/history ] || [ ! -d $NEWS/history ]
+	then
+		return 0
+	fi
+
+	df $NEWS/history | tail -1 | grep -q -E 'ramfs|tmpfs|/dev/shm'
+	if [ $? != 0 ]
+	then
+		echo "$NAME: RAMFS history filesystem being created"
+		if ! mount -t ramfs ramfs $NEWS/history
+		then
+			echo "$NAME: RAMFS history filesystem creation failed">&2
+			exit 1
+		fi
+		chown news:news $NEWS/history
+	fi
+	if [ -f $NEWS/db/dhistory.snp ]
+	then
+		F=`find $NEWS/history/dhistory -newer \
+			$NEWS/db/dhistory.snp 2>/dev/null`
+		if [ "$F" = "" ]
+		then
+			echo "$NAME: Copying history snapshot to RAMFS"
+			cp -p $NEWS/db/dhistory.snp $NEWS/history/dhistory
+		fi
+	elif [ -f $NEWS/db/dhistory.old ]
+	then
+		F=`find $NEWS/history/dhistory -newer \
+			$NEWS/db/dhistory.old 2>/dev/null`
+		if [ "$F" = "" ]
+		then
+			echo "$NAME: WARNING: Copying OLD history snapshot to RAMFS"
+			cp -p $NEWS/db/dhistory.old $NEWS/history/dhistory
+		fi
+	else
+		echo "$NAME: No persistent history to copy" >&2
+		exit 1
+	fi
+	rm -f $NEWS/db/dhistory.tmp.*
+}
+
+fix_iosched() {
+	for i in /sys/block/sd?
+	do
+		SCHED="$i/queue/scheduler"
+		if [ -w "$SCHED" ]
+		then
+			echo deadline > $SCHED
+		fi
+	done
+}
+
+if [ ! -x "$DAEMON" ]
+then
+	echo "$0: binaries not found." >&2
+	exit 1
+fi
+
+cd $NEWS
+HOME=$NEWS
+export HOME
+
+if [ -f /news/etc/hostname ]
+then
+	FQDN=$(cat /news/etc/hostname)
+else
+	FQDN=$(hostname)
+fi
+
+#
+# You may wish to automatically trim and sort the dactive.kp file
+# while restarting news.  This will, however, cause problems if your
+# reader or feeder systems are currently running.  Uncomment this if
+# you are sure that you will only run rc.news if the entire news
+# system is stopped at the time.
+#
+case "$1" in
+	start)
+		check_prereqs
+		fix_iosched
+
+		if [ "`pidof $DIABLO`" != "" ]
+		then
+			echo "$NAME is already running" >&2
+			exit 0
+		fi
+
+		dactive=`$DBIN/dpath server_dactive`
+		if [ -f "$dactive" ]
+		then
+			su news -s /bin/sh -c "$DBIN/dkp -t $dactive"
+			su news -s /bin/sh -c "$DBIN/dkp -s $dactive"
+		fi
+
+		history
+		ulimit -n 4096
+
+		echo -n "Starting $DESC: $NAME"
+		start-stop-daemon --start --quiet --exec $DAEMON -- server \
+			-s"                                                 " \
+			-p $FQDN
+		echo "."
+		;;
+
+	stop)
+		echo -n "Stopping $DESC: $NAME"
+		$DBIN/dicmd exit > /dev/null
+		sync
+		echo "."
+		;;
+
+	restart|force-reload)
+		echo -n "Restarting $DESC: $NAME"
+		$DBIN/dicmd exit > /dev/null
+		if [ "$?" != 0 ]
+		then
+			echo ": failed to stop."
+			exit 1
+		fi
+		start-stop-daemon --start --quiet --exec $DAEMON -- server \
+			-s"                                                 " \
+			-p $FQDN
+		echo "."
+		;;
+
+	*)
+		echo "Usage: $SCRIPTNAME {start|stop|restart|force-reload}" >&2
+		exit 1
+		;;
+esac
+

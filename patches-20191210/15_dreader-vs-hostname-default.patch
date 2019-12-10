@@ -1,0 +1,13 @@
+--- diablo-6-CUR-20140422-00/dreaderd/dns.c.ORIG	2015-07-16 14:09:19.000000000 +0200
++++ diablo-6-CUR-20140422-00/dreaderd/dns.c	2015-08-05 13:57:35.000000000 +0200
+@@ -2508,6 +2508,10 @@
+ 		    logit(LOG_ERR, "Found 'end' without define in line %d", linecount);
+ 		    break;
+ 		case OPT_VSERVER:
++		    if (strcmp(vserver.vs_HostName, "DEFAULT") == 0 &&
++			DOpts.ReaderHostName != NULL)
++			strncpy(vserver.vs_HostName, DOpts.ReaderHostName,
++					sizeof(vserver.vs_HostName) - 1);
+ 		    if (!*vserver.vs_ClusterName)
+ 			strcpy(vserver.vs_ClusterName, vserver.vs_HostName);
+ 		    if (strcmp(vserver.vs_Name, "DEFAULT") == 0) {

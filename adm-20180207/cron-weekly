@@ -1,0 +1,29 @@
+#! /bin/sh
+#
+# cron-weekly	Administrative scripts that should be run
+#		once a week. This script tries to be smart
+#		and run whatever is needed.
+#
+
+NEWS=/news
+cd $NEWS
+[ -f diablo.config ] || exit 0
+
+LOG=`dbin/dpath log`
+exec >>$LOG/weekly.log 2>&1
+
+# See what services are running.
+STATUS=`dbin/drcmd status 2>&1`
+case "$STATUS" in
+	*Connect*)
+		DREADER_UP=true
+	;;
+esac
+
+if [ "$DREADER_UP" = true ]
+then
+	# Rewrite overview database.
+	# Disabled by default - buggy.
+	: adm/adm-rewriteover
+fi
+

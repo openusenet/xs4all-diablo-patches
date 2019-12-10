@@ -1,0 +1,22 @@
+--- diablo-6-CUR-20140422-00/dreaderd/reader.c.ORIG	2015-08-05 21:09:27.000000000 +0200
++++ diablo-6-CUR-20140422-00/dreaderd/reader.c	2015-08-05 21:45:35.000000000 +0200
+@@ -717,6 +717,9 @@
+ {
+     static char r[512];
+     int l = 0;
++    char *shorthost = vs->vs_HostName;
++    char *e = strchr(shorthost, '.');
++    int shlen = e ? e - shorthost : strlen(shorthost);
+ 
+     r[0] = 0;
+     while (l < sizeof(r) && *base) {
+@@ -731,6 +734,9 @@
+ 		case 'h':
+ 		    l += snprintf(&r[l], 512 - l, "%s", vs->vs_HostName);
+ 		    break;
++		case 'H':
++		    l += snprintf(&r[l], 512 - l, "%.*s", shlen, vs->vs_HostName);
++		    break;
+ 		case 'o':
+ 		    l += snprintf(&r[l], 512 - l, "%s", vs->vs_Org);
+ 		    break;

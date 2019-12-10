@@ -1,0 +1,16 @@
+--- diablo-6-CUR-20170901-00.a/dreaderd/reader.c	2018-08-28 16:18:11.347018655 +0200
++++ diablo-6-CUR-20170901-00/dreaderd/reader.c	2019-12-10 15:46:48.530026932 +0100
+@@ -1127,10 +1127,10 @@
+     ++conn->co_FCounter;
+ 
+     /*
+-     * if there is still output pending, do not process the next
+-     * command.
++     * if there is still more than 256K of output pending,
++     * do not process the next command.
+      */
+-    if (conn->co_TMBuf.mh_Bytes > 0 && !conn->co_TMBuf.mh_WError)
++    if (conn->co_TMBuf.mh_Bytes > (256*1024) && !conn->co_TMBuf.mh_WError)
+ 	return;
+ 
+     /*

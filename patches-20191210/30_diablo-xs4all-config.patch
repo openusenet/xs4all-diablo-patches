@@ -1,0 +1,65 @@
+diff -ruN diablo-6-CUR-20140422-00/XMakefile.inc diablo-6-CUR-20140422-00.work/XMakefile.inc
+--- diablo-6-CUR-20140422-00/XMakefile.inc	2018-05-23 18:06:11.247145660 +0200
++++ diablo-6-CUR-20140422-00.work/XMakefile.inc	2018-02-07 23:00:29.309192821 +0100
+@@ -45,8 +45,8 @@
+ 
+ #ifdef __linux__
+ .set CFLAGS	-g -O2 -Wall -Wstrict-prototypes "-I$(BD)" $(CDEFINES) -D_FILE_OFFSET_BITS=64
+-.set LFLAGS	-L$(BD)obj -lfilter -ldiablo -lm -lz
+-.set DR_LFLAGS	-L$(BD)obj -ldiablo -lm -lz
++.set LFLAGS	-L$(BD)obj -lfilter -ldiablo -lz -lm
++.set DR_LFLAGS	-L$(BD)obj -ldiablo -ldb -lz -lm -lcrypto /usr/local/lib/libradius.a
+ #endif
+ 
+ #ifdef __osf__
+--- diablo-6-CUR-20140422-00.orig/lib/vendor.h	2018-05-23 18:03:47.496378295 +0200
++++ diablo-6-CUR-20140422-00/lib/vendor.h	2018-05-23 18:01:55.885335337 +0200
+@@ -76,13 +76,13 @@
+  * highly recommended.
+  */
+ 
+-#undef	POST_CRYPTXTRACE
++#define	POST_CRYPTXTRACE
+ 
+ /*
+  * Enable RADIUS authentication.  Works on FreeBSD or similar libradius.
+  */
+ 
+-#undef	RADIUS_ENABLED
++#define	RADIUS_ENABLED
+ 
+ /*
+  * Enable CDB authentication. Needs the CDB libraries installed.
+@@ -99,7 +99,7 @@
+  *
+  */
+ 
+-#undef	DB_ENABLED
++#define	DB_ENABLED
+ 
+ /*
+  * Set a path to a Berkeley DB that includes a list of users that
+@@ -107,7 +107,7 @@
+  *
+  */
+ 
+-#undef	REJECT_DB	/* "/news/db/reject.db" */
++#define	REJECT_DB	"/news/db/reject.db"
+ 
+ /*
+  * Enable NetRemote authentication.  Works on FreeBSD, requires DES.
+@@ -319,6 +319,7 @@
+  * MAXFEEDS is the max # of outgoing feeds - 128 by default.
+  */
+ #undef MAXFORKS		/* 512 */
++#define MAXFORKS	3800
+ #undef MAXFEEDS		/* 128 */
+ 
+ /*
+@@ -328,5 +329,5 @@
+  * usually only contain 1024 filedescriptors. On some systems you can
+  * increase this (for example Linux and FreeBSD). Must be a power of two!
+  */
+-#undef LARGE_FD_SETSIZE /* 1024 */
++#define LARGE_FD_SETSIZE 4096
+ 

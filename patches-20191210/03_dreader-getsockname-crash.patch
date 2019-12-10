@@ -1,0 +1,11 @@
+--- diablo-6-CUR-20140422-00/dreaderd/main.c.ORIG	2017-03-27 14:14:26.952582423 +0200
++++ diablo-6-CUR-20140422-00/dreaderd/main.c	2018-02-07 22:45:18.001314475 +0100
+@@ -1423,6 +1423,8 @@
+ 
+     if (getsockname(fd, (struct sockaddr *)&lsin, &lslen) < 0) {
+ 	logit(LOG_ERR, "getsockname(%d) call failed: %s", fd, strerror(errno));
++	close(fd);
++	return;
+     }
+ 
+     ++ConnectCount;

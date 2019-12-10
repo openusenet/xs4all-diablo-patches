@@ -1,0 +1,28 @@
+#! /bin/sh
+#
+# cron-5mins	Administrative scripts that should be run
+#		every 5 minutes. This script tries to be smart
+#		and run whatever is needed.
+#
+
+NEWS=/news
+cd $NEWS
+[ -f diablo.config ] || exit 0
+
+LOG=`dbin/dpath log`
+exec >>$LOG/5mins.log 2>&1
+
+# See what services are running.
+STATUS=`dbin/dicmd status 2>&1`
+case "$STATUS" in
+	[0-9]*)
+		DIABLO_UP=true
+	;;
+esac
+
+if [ "$DIABLO_UP" = true ]
+then
+	# Start dspoolout
+	adm/adm-dspoolout
+fi
+

@@ -1,0 +1,312 @@
+diff -ruN diablo-6-CUR-20170901-00.a/dreaderd/server.c diablo-6-CUR-20170901-00/dreaderd/server.c
+--- diablo-6-CUR-20170901-00.a/dreaderd/server.c	2018-11-06 16:14:57.578906008 +0100
++++ diablo-6-CUR-20170901-00/dreaderd/server.c	2018-08-28 16:18:11.339018720 +0200
+@@ -551,7 +551,7 @@
+     Connection *conn = data;
+ 
+     if (conn->co_RequestHash &&
+-	    !HM_CheckForMatch(conn->co_RequestHash, sreq->sr_MsgId, HMOPER_MATCHONE))
++	    !HM_CheckForMatch(conn->co_RequestHash, (mid_t)sreq->sr_MsgId))
+ 	return(0);
+ 
+     if (conn->co_Retention > 0 && sreq->sr_TimeRcvd &&
+diff -ruN diablo-6-CUR-20170901-00.a/lib/hashfeed.c diablo-6-CUR-20170901-00/lib/hashfeed.c
+--- diablo-6-CUR-20170901-00.a/lib/hashfeed.c	2018-11-06 16:14:57.578906008 +0100
++++ diablo-6-CUR-20170901-00/lib/hashfeed.c	2018-11-06 17:01:34.811925361 +0100
+@@ -94,11 +94,10 @@
+ 
+ Prototype hashint_t HM_OldQuickhash(mid_t mid);
+ Prototype void HM_MD5MessageID(mid_t mid, unsigned char *res);
+-Prototype hashint_t HM_GetHashInt(mid_t mid, int offloc);
+-Prototype int HM_CheckForMatch(HashFeed_MatchList *hf, mid_t mid, int hmoper);
+-Prototype hashint_t HM_GetHashInt_PC(unsigned char *res, int offloc);
+-Prototype int HM_CheckForMatch_PC(HashFeed_MatchList *hf, mid_t mid, unsigned char *res, int hmoper);
+-Prototype HashFeed_MatchList * HM_ConfigNode_Sub(HashFeed_MatchList *hf, HashFeed_MatchList *next, char *conf);
++Prototype int HM_CheckForMatch(HashFeed_MatchList *hf, mid_t mid);
++Prototype hashint_t HM_GetHashInt(unsigned char *res, int offloc);
++Prototype int HM_CheckForMatch_PC(HashFeed_MatchList *hf, mid_t mid, unsigned char *res);
++Prototype HashFeed_MatchList * HM_ConfigNode_Sub(HashFeed_MatchList *hf, HashFeed_MatchList *next, char *conf, int offset);
+ #endif
+ 
+ 
+@@ -180,17 +179,14 @@
+  */
+ 
+ hashint_t
+-HM_GetHashInt(mid_t mid, int offloc)
++HM_GetHashInt(unsigned char *res, int offloc)
+ {
+-	unsigned char res[16];
+ 	hashint_t rval;
+ 
+ 	if (offloc < 0 || offloc > 12) {
+ 		return((hashint_t)0);
+ 	}
+ 
+-	HM_MD5MessageID(mid, res);
+-
+ 	memcpy((void *)&rval, (void *)&res[12 - offloc], sizeof(rval));
+ 
+ 	return(ntohl(rval));
+@@ -205,115 +201,61 @@
+  */
+ 
+ int 
+-HM_CheckForMatch(HashFeed_MatchList *hf, mid_t mid, int hmoper)
++HM_CheckForMatch(HashFeed_MatchList *hf, mid_t mid)
+ {
+-	hashint_t hval;
++	unsigned char res[16];
+ 
+-	while (hf) {
+-		switch (hf->HM_Type) {
+-			case	HMTYPE_OLD:	hval = HM_OldQuickhash(mid);
+-						break;
+-			case	HMTYPE_MD5:	hval = HM_GetHashInt(mid, hf->HM_Offset);
+-						break;
+-			default:		return(-1);
+-		}
+-#ifdef	HM_DEBUG
+-		fprintf(stderr, "hval %u, %s%d-%d/%d:%d, res %d\n", hval, (hf->HM_Type == HMTYPE_OLD) ? "@" : "", hf->HM_Start, hf->HM_End, hf->HM_ModVal, hf->HM_Offset, (hval % hf->HM_ModVal + 1) >= hf->HM_Start && (hval % hf->HM_ModVal + 1) <= hf->HM_End); 
+-#endif
+-		if ((hval % hf->HM_ModVal + 1) >= hf->HM_Start &&
+-		    (hval % hf->HM_ModVal + 1) <= hf->HM_End) {
+-			if (hmoper == HMOPER_MATCHONE) {
+-				return(1);
+-			}
+-		} else {
+-			if (hmoper == HMOPER_MATCHALL) {
+-				return(0);
+-			}
+-		}
+-		hf = hf->HM_Next;
+-	}
+-	if (hmoper == HMOPER_MATCHALL) {
+-		return(1);
+-	}
+-	return(0);
++	HM_MD5MessageID(mid, res);
++	return HM_CheckForMatch_PC(hf, mid, res);
+ }
+ 
+ 
+ 
+-
+-
+ /*
+  * If you are going to do a lot of work on a single Message-ID,
+  * like comparing it to all your newsfeed objects, it makes sense
+- * to avoid calling HM_CheckForMatch which will call HM_GetHashInt
+- * which will call HM_MD5MessageID which will call MD5Update.
++ * to avoid calling HM_CheckForMatch which will call HM_MD5MessageID
++ * which will call MD5Update.
+  *
+  * Use these PreComputing functions instead.  Call HM_MD5MessageID 
+  * to set up the MD5 result first, then you can repeatedly call
+- * HM_CheckForMatch_PC which will call HM_GetHashInt_PC, saving the
+- * repeated MD5 calls.
+- */
+-
+-/*
+- * Pull out a 32-bit value from offset offloc (0-12)
+- * for the provided MID (PreCompute version)
+- */
+-
+-hashint_t
+-HM_GetHashInt_PC(unsigned char *res, int offloc)
+-{
+-	hashint_t rval;
+-
+-	if (offloc < 0 || offloc > 12) {
+-		return((hashint_t)0);
+-	}
+-
+-	memcpy((void *)&rval, (void *)&res[12 - offloc], sizeof(rval));
+-
+-	return(ntohl(rval));
+-}
+-
+-
+-
+-
+-
+-/*
+- * Check for a match in the referenced HashFeed_MatchList
+- * (PreCompute version)
++ * HM_CheckForMatch_PC, saving the repeated MD5 calls.
+  */
+ 
+ int 
+-HM_CheckForMatch_PC(HashFeed_MatchList *hf, mid_t mid, unsigned char *res, int hmoper)
++HM_CheckForMatch_PC(HashFeed_MatchList *hf, mid_t mid, unsigned char *res)
+ {
+ 	hashint_t hval;
++	int match = 0;
+ 
+ 	while (hf) {
+ 		switch (hf->HM_Type) {
+ 			case	HMTYPE_OLD:	hval = HM_OldQuickhash(mid);
+ 						break;
+-			case	HMTYPE_MD5:	hval = HM_GetHashInt_PC(res, hf->HM_Offset);
++			case	HMTYPE_MD5:	hval = HM_GetHashInt(res, hf->HM_Offset);
+ 						break;
+ 			default:		return(-1);
+ 		}
+ #ifdef	HM_DEBUG
+ 		fprintf(stderr, "hval %u, %s%d-%d/%d:%d, res %d\n", hval, (hf->HM_Type == HMTYPE_OLD) ? "@" : "", hf->HM_Start, hf->HM_End, hf->HM_ModVal, hf->HM_Offset, (hval % hf->HM_ModVal + 1) >= hf->HM_Start && (hval % hf->HM_ModVal + 1) <= hf->HM_End); 
+ #endif
++		char hashmatch = 0;
+ 		if ((hval % hf->HM_ModVal + 1) >= hf->HM_Start &&
+ 		    (hval % hf->HM_ModVal + 1) <= hf->HM_End) {
+-			if (hmoper == HMOPER_MATCHONE) {
+-				return(1);
+-			}
+-		} else {
+-			if (hmoper == HMOPER_MATCHALL) {
+-				return(0);
+-			}
++				hashmatch = 1;
++		}
++		if (hf->HM_Cascade) {
++			if (hashmatch && match)
++				break;
++			match = 0;
++			hashmatch = 0;
++		}
++		if (hashmatch) {
++			match = 1;
+ 		}
+ 		hf = hf->HM_Next;
+ 	}
+-	if (hmoper == HMOPER_MATCHALL) {
+-		return(1);
+-	}
+-	return(0);
++	return match;
+ }
+ 
+ 
+@@ -340,7 +282,7 @@
+  */
+ 
+ HashFeed_MatchList * 
+-HM_ConfigNode_Sub(HashFeed_MatchList *hf, HashFeed_MatchList *next, char *conf)
++HM_ConfigNode_Sub(HashFeed_MatchList *hf, HashFeed_MatchList *next, char *conf, int offset)
+ {
+ 	char *ptr;
+ 
+@@ -365,6 +307,8 @@
+ 	}
+ 	if ((ptr = strchr(conf, ':'))) {
+ 		hf->HM_Offset = strtol(++ptr, NULL, 10);
++	} else {
++		hf->HM_Offset = offset;
+ 	}
+ 	if ((ptr = strchr(conf, '/'))) {
+ 		hf->HM_ModVal = strtol(++ptr, NULL, 10);
+diff -ruN diablo-6-CUR-20170901-00.a/lib/hashfeed.h diablo-6-CUR-20170901-00/lib/hashfeed.h
+--- diablo-6-CUR-20170901-00.a/lib/hashfeed.h	2018-11-06 16:14:57.578906008 +0100
++++ diablo-6-CUR-20170901-00/lib/hashfeed.h	2018-11-06 16:22:57.163014927 +0100
+@@ -102,5 +102,6 @@
+     hashint_t			HM_ModVal;	/* Mod value for hash (0-n) */
+     char			HM_Offset;	/* Offset val for HMTYPE_MD5 */
+     char			HM_Type;	/* Hash type */
++    char			HM_Cascade;	/* Signals final &hashmatch of this set */
+     struct HashFeed_MatchList	*HM_Next;	/* Next list ptr */
+ } HashFeed_MatchList;
+diff -ruN diablo-6-CUR-20170901-00.a/lib/newsfeed.c diablo-6-CUR-20170901-00/lib/newsfeed.c
+--- diablo-6-CUR-20170901-00.a/lib/newsfeed.c	2018-11-06 16:14:57.578906008 +0100
++++ diablo-6-CUR-20170901-00/lib/newsfeed.c	2018-08-28 16:18:11.339018720 +0200
+@@ -315,14 +315,14 @@
+ {
+     if (! hashfeed)
+ 	return(0);
+-    return(!HM_CheckForMatch_PC(hashfeed, (mid_t)msgid, md5hash, HMOPER_MATCHONE));
++    return(!HM_CheckForMatch_PC(hashfeed, (mid_t)msgid, md5hash));
+ }
+ 
+ int
+ ArtHashIsFiltered(const char *msgid)
+ {
+     if(IFBase && IFBase->nf_HashFeed) {
+-      return(!HM_CheckForMatch(IFBase->nf_HashFeed, (mid_t)msgid, HMOPER_MATCHONE));
++      return(!HM_CheckForMatch(IFBase->nf_HashFeed, (mid_t)msgid));
+     }
+     return(0);
+ }
+@@ -2622,7 +2622,7 @@
+     fprintf(fo, "  ReadOnly       : %d\n", nf->nf_ReadOnly);
+     fprintf(fo, "  WhereIs        : %d\n", nf->nf_WhereIs);
+     for (hfptr = nf->nf_HashFeed, nhf = 0; hfptr; hfptr = hfptr->HM_Next) {
+-	fprintf(fo, "  HashFeed       : %d %s%d-%d/%d:%d\n", nhf++, (hfptr->HM_Type == HMTYPE_OLD) ? "@" : "", hfptr->HM_Start, hfptr->HM_End, hfptr->HM_ModVal, hfptr->HM_Offset);
++	fprintf(fo, "  HashFeed       : %d %s%s%d-%d/%d:%d\n", nhf++, (hfptr->HM_Cascade) ? "|" : " ", (hfptr->HM_Type == HMTYPE_OLD) ? "@" : "", hfptr->HM_Start, hfptr->HM_End, hfptr->HM_ModVal, hfptr->HM_Offset);
+     }
+ 
+     fprintf(fo, "  IncomingPriority: %d\n", nf->nf_IncomingPriority);
+diff -ruN diablo-6-CUR-20170901-00.a/lib/spool.c diablo-6-CUR-20170901-00/lib/spool.c
+--- diablo-6-CUR-20170901-00.a/lib/spool.c	2018-11-06 16:14:57.578906008 +0100
++++ diablo-6-CUR-20170901-00/lib/spool.c	2018-08-28 16:18:11.343018687 +0200
+@@ -391,7 +391,7 @@
+     for (ex = ExBase; ex; ex = ex->ex_Next) {
+ 	if (WildGroupFind(ex->ex_Wild, groups)) {
+ 	    if (msgid != NULL && ex->ex_MetaSpool->ms_HashFeed &&
+-			!HM_CheckForMatch(ex->ex_MetaSpool->ms_HashFeed, (mid_t)msgid, HMOPER_MATCHONE))
++			!HM_CheckForMatch(ex->ex_MetaSpool->ms_HashFeed, (mid_t)msgid))
+ 		continue;
+ 	    if (size && ex->ex_MetaSpool->ms_MaxSize && size >
+ 					ex->ex_MetaSpool->ms_MaxSize)
+diff -ruN diablo-6-CUR-20170901-00.a/lib/subs.c diablo-6-CUR-20170901-00/lib/subs.c
+--- diablo-6-CUR-20170901-00.a/lib/subs.c	2018-11-06 16:14:57.578906008 +0100
++++ diablo-6-CUR-20170901-00/lib/subs.c	2018-11-06 17:01:34.811925361 +0100
+@@ -789,28 +789,39 @@
+ HashFeed_MatchList *
+ DiabHashFeedParse(MemPool **pool, char *hashconfig)
+ {
+-    char *ptr;
+-    HashFeed_MatchList *new, *cfgnext = NULL;
++    char *ptr, sep;
++    HashFeed_MatchList *new, *ret = NULL;
++    HashFeed_MatchList **cfgnext = &ret;
++    char cascade = 0;
+ 
+-    for (;;) {
+-	if (! hashconfig || ! *hashconfig) {
+-	    return(cfgnext);
+-	}
++    while (hashconfig && *hashconfig) {
+ 
+-	if ((ptr = strchr(hashconfig, ','))) {
++	if ((ptr = strpbrk(hashconfig, ",|&"))) {
++	    sep = *ptr;
+ 	    *ptr = '\0';
++	} else {
++	    sep = 0;
+ 	}
++
+ 	if (! ((new = zalloc(pool, sizeof(HashFeed_MatchList))))) {
+ 	    return(NULL);
+ 	}
+-	HM_ConfigNode_Sub(new, cfgnext, hashconfig);
+-	cfgnext = new;
++	int offloc = cascade ? 4 : 0;
++	HM_ConfigNode_Sub(new, NULL, hashconfig, offloc);
++	new->HM_Cascade = cascade;
++	*cfgnext = new;
++	cfgnext = &(new->HM_Next);
+ 
+-	if (ptr) {
+-	    *ptr++ = ',';
+-	}
++	if (sep == '|' || sep == '&')
++	    cascade = 1;
++	else
++	    cascade = 0;
++		
++	if (ptr)
++	    *ptr++ = sep;
+         hashconfig = ptr;
+     }
++    return ret;
+ }
+ 
+ int

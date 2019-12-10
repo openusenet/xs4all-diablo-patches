@@ -1,0 +1,22 @@
+#! /bin/sh
+#
+# dumphist 	Perform the actual history backup.
+#		Called by the diablo process.
+#
+
+NEWS=/news
+cd $NEWS
+
+if [ x"$1" != x"locked" ]
+then
+	dbin/plock $NEWS/.dumphistlock adm/dumphist locked
+fi
+
+DHISTORY=`dbin/dpath dhistory`
+DB=`dbin/dpath db`
+
+rm -f $DB/dhistory.old
+cp -fp $DHISTORY $DB/dhistory.tmp.$$
+mv -f $DB/dhistory.snp $DB/dhistory.old
+mv -f $DB/dhistory.tmp.$$ $DB/dhistory.snp
+

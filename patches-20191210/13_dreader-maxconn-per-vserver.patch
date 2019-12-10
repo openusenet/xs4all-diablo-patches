@@ -1,0 +1,58 @@
+diff -druN diablo-6-CUR-20140422-00/dreaderd/main.c diablo-6-CUR-20140422-00-work2/dreaderd/main.c
+--- diablo-6-CUR-20140422-00/dreaderd/main.c	2015-07-06 22:21:27.000000000 +0200
++++ diablo-6-CUR-20140422-00-work2/dreaderd/main.c	2015-07-16 00:00:44.000000000 +0200
+@@ -1714,7 +1714,10 @@
+ 	 * calculate the rate limit.
+ 	 */
+ 	for (dr = DnsResHash[hi]; dr; dr = dr->dr_HNext) {
+-	    if (strcmp(tmpaddr, NetAddrToSt(0, (struct sockaddr *)&dr->dr_Addr, 1, 0, 0)) == 0) {
++	    char *ipname = NetAddrToSt(0, (struct sockaddr *)&dr->dr_Addr, 1, 0, 0);
++	    /* we count per-vserver, not global! */
++	    if (strcmp(tmpaddr, ipname) == 0 &&
++			strcmp(dres.dr_VServer, dr->dr_VServer) == 0) {
+ 		++hcount;
+ 		if (*dres.dr_IdentUser && *dr->dr_IdentUser &&
+ 			strcmp(dres.dr_IdentUser, dr->dr_IdentUser) == 0)
+@@ -1725,13 +1728,15 @@
+ 			dres.dr_ReaderDef->rd_MaxConnPerUser) {
+ 	    for (hmi=0; hmi < DRHSIZE; hmi++) 
+ 		for (dr = DnsResHash[hmi]; dr; dr = dr->dr_HNext) {
+-		    if (*dres.dr_AuthUser && *dr->dr_AuthUser &&
+-			    strcmp(dres.dr_AuthUser, dr->dr_AuthUser) == 0)
+-			++ucount;
+-		    if (strcmp(dres.dr_ReaderName, dr->dr_ReaderName) == 0)
+-			++gcount;
+-		    if (strcmp(dres.dr_VServer, dr->dr_VServer) == 0)
++		    /* we count per-vserver, not global! */
++		    if (strcmp(dres.dr_VServer, dr->dr_VServer) == 0) {
+ 			++vcount;
++			if (*dres.dr_AuthUser && *dr->dr_AuthUser &&
++			    strcmp(dres.dr_AuthUser, dr->dr_AuthUser) == 0)
++			    ++ucount;
++			if (strcmp(dres.dr_ReaderName, dr->dr_ReaderName) == 0)
++			    ++gcount;
++		    }
+ 		}
+ 	}
+ 
+diff -druN diablo-6-CUR-20140422-00/samples/dreader.access diablo-6-CUR-20140422-00-work2/samples/dreader.access
+--- diablo-6-CUR-20140422-00/samples/dreader.access	2009-01-14 14:42:52.000000000 +0100
++++ diablo-6-CUR-20140422-00-work2/samples/dreader.access	2015-07-15 23:58:59.000000000 +0200
+@@ -208,12 +209,14 @@
+ #		  option above.
+ # controlpost	 : client is allowed to post non-cancel Control: messages
+ #		   (default is 'yes')
+-# maxconnperhost : Maximum connections from a specific IP address (across all
+-#                  reader definitions
++# maxconn:         Max connections (counted globally)
++# maxconnpervs:    Max connections to the current vserver
++# maxconnperhost : Maximum connections from a specific IP address (per vserver)
+ # maxconnpergroup: Max connections allowed for hosts matching this group
++#                  (readerdef, really) (per vserver).
+ # maxconnperuser : Max connections for a specific user. This option is only
+ #                  valid if the user name is available (via ident or
+-#                  AUTHINFO - see authdef)
++#                  AUTHINFO - see authdef) (per vserver)
+ #
+ # ignoreauthinfo : Ignore any AUTHINFO data supplied by the client. This
+ #		   allows clients to match an IP range even when they
